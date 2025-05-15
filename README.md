@@ -24,7 +24,7 @@ Computing Environment Details:
 
 Data:
 
-The dataset used in this analysis is the NBA Players dataset curated by Justinas Cirtuatas and publicly available on Kaggle (https://www.kaggle.com/datasets/justinas/nba-players-data?resource=download&select=all_seasons.csv). I have downloaded the dataset as a .csv file, which is available in this repository under the folder "nba_data"
+The dataset used in this analysis is the NBA Players dataset curated by Justinas Cirtuatas and publicly available on Kaggle (https://www.kaggle.com/datasets/justinas/nba-players-data?resource=download&select=all_seasons.csv). I have downloaded the dataset as a .csv file, which is available in this repository as "all_seasons.csv"
 
 ##########################################################################
 
@@ -46,7 +46,7 @@ The .Rmd file "Requirements.Rmd" installs and loads these five required R packag
 
 To run code:
 
-1. Please begin by setting your working directory to the folder for this respository, titled "NBA.point.differential_final.project"
+1. Please begin by setting your working directory to the folder for this respository, titled "final-project-stsci6020-2025-GayatriAnil"
 
 2. Next, please run the file "Requirements.Rmd" to install and load the necessary R packages for the analysis.
 
