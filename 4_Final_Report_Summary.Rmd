@@ -1,0 +1,210 @@
+#### Name: Gayatri Anil
+
+#### Date: May 11, 2025
+
+# Introduction: dataset description and problem statement
+
+I performed a linear regression analysis looking at whether it is possible to predict an NBA team's point differential while a particular player is on the court using other information known about the player, such as demographic information and basic box score statistics. Being able to predict a player's point differential could be beneficial for GMs and coaches because players with a higher point differential are those who, when on the court, lead their team to outscore their opponent, thus increasing the team's chance of winning. Knowing a player's point differential could help guide GMs on who to draft when comparing players or indicate to coaches which player to start.
+
+The dataset used is the NBA Players dataset curated by Justinas Cirtuatas and publicly available on Kaggle (<https://www.kaggle.com/datasets/justinas/nba-players-data?resource=download&select=all_seasons.csv>). It includes player information from the 1996-2022 NBA seasons. Specifically, each observation (i.e. row in the data) corresponds to a particular player in a specific NBA season. For this analysis, I have downloaded the dataset from Kaggle and the .csv file is available in this repository in the folder "nba_data".
+
+# Methodology: techniques used and justification
+
+##### Exploratory Data Analysis:
+
+Please see .Rmd file "1_ExploratoryDataAnalysis.Rmd" for code corresponding to this step and my conclusions from the analysis.
+
+Briefly, since the purpose of this analysis was to predict an NBA team's point differential while a particular player is on the court (called net_rating in this dataset), I began by selecting a subset of demographic and box score variables that seemed like they could potentially impact a player's net_rating. Particularly, there were some variables like ast (average number of assists distributed) and ast_pct (percentage of teammate field goals the player assisted while he was on the floor) that seemed like they could have overlapping information, so only one variable was selected to represent that information (in this case, ast). I also filtered the dataset to only include observations from NBA players that played in 50 or more games in the given season since players that played in only few games in a season tended to have box statistics, like average points per game or a net_rating, that were very high or very low. This cleaned dataset was verified that it had no missing values and each variable was assigned to the correct variable type in R such that continuous variables were assigned to be numeric, variables that only took on whole numbers were assigned to be integers, and categorical variables were assigned to be factors.
+
+The distribution of categorical variables was looked at using the table() function in R. Numeric and integer variables were looked at by examining summary statistics (like mean, median, range) and by plotting a histogram of the variable. The histograms were particularly used to identify if there were any observations for a given variable that seemed to be outliers. The only variables that seemed to have clear outliers were player height and weight, and the players who were determined to be outliers for those variables were removed from the dataset.
+
+Finally, the pairs() function was used to examine the relationships between the variables in the dataset using scatterplots (the pairs function only works to compare continuous or integer variables, however, since none of the categorical variables were considered potential predictor variables for the linear regression analysis, this seemed to be acceptable.) From the comparative scatterplots, there did not seem to be any strong linear associations except between player height and weight. In regards to the outcome variable net_rating, it looked as if there was a moderate positive linear relationship between the outcome and average points per game, average rebounds per game, and average assists per game.
+
+##### Preliminary linear regression model building:
+
+Please see .Rmd file "2_LinearRegressionAssumptions.Rmd" for code corresponding to this step and my conclusions from the analysis (specifically section 2 "Preliminary Regression Model Building and Variable Selection").
+
+My interest was to predict a player's net_rating, and I thought that the follow box score variables (average points, rebounds, and assists per game) and demographic variables (height, weight, age) could potentially be important predictors.
+
+I began by splitting my cleaned NBA dataset into 70% training data, 30% testing data (random assignment was used so that the training and testing data were not systematically different). This was done so that I could use variable selection procedures to identify the most important covariates to include but still have my inference procedures be valid.
+
+Variable selection was performed using the training data. I tried both forwards selection and backwards selection with BIC as the information criterion to identify the most important predictors. The full model considered was a model with net_rating as the outcome and average points, rebounds, and assists per game, height, weight, and age as potential covariates.
+
+Both the forwards and backwards selection converged on the same best model (had the lowest negative BIC score), which included just the covariates points, rebounds, assists, and player age. Therefore, for all following analyses, I used this best model with these four covariates of interest. Points, rebounds, assists are all numeric and player age is an integer.
+
+##### Check linear regression assumptions:
+
+Please see .Rmd file "2_LinearRegressionAssumptions.Rmd" for code corresponding to this step and my conclusions from the analysis (specifically section 3 "Check Linear Regression Assumptions).
+
+I checked to see if the best model from the variable selection process met all the assumptions of linear regression. To see if the model met the independence assumption, I checked both a plot of residuals versus fitted values and conducted a Durbin-Watson test. The linearity assumption was checked by making scatterplots of the outcome variable net_rating against each of the covariates in the model as well as by looking at the residuals versus fitted values plot. The homoskedasticity assumption was checked by plotting the residuals versus each covariate in the model. The normality assumption was checked using qqPlots (using the qqPlot() function from the package "car") and the multicollinearity assumption was tested by calculating the variance inflation factor (using the vif() function from the package "car").
+
+Please see section 3 in the file ""2_LinearRegressionAssumptions.Rmd" to view each plot and my description based on the plot of why I though a given assumption was met or not.
+
+Overall, I found that the independence, normality, and multicollinearity assumptions seemed to be met, but the linearity and homoskedasticity assumptions were not.
+
+##### Model transformations and correcting assumption violations:
+
+Please see .Rmd file "2_LinearRegressionAssumptions.Rmd" for code corresponding to this step (specifically section 4 "Assumption Violation Handling"). The code has each plot mentioned below and a description based on the plot of why I thought a given assumption was now met or not.
+
+To adjust for the linearity and homoskedasticity assumptions being violated, I tried different transformations of the response variable and covariates (particularly the age covariate) and see if they improved the model. Specifically, I tried 1) log transforming just the response variable, 2) log transforming just the covariate age, 3) log transforming all of the covariates, 4) log transforming the response and all of the covariates, 5) using the poly() function to include an $age^2$ term.
+
+I then compared these five transformed models to the original model using side-by-side fitted value versus residual plots, observed vs fitted value scatterplots, and qqPlots. The model that best seemed to satisfy the linear regression assumptions overall based on these three diagnostic plots was selected as the best model going forward. I found that the third transformation, log transforming all of the covariates only, seemed to best satisfy the linear regression assumptions out of all the six models tested. This transformed model seemed to now satisfy the linearity assumption based on the residual versus fitted value plots. However, although the transformation improved the model such that the error variance was more constant that the original model, the transformed model still did not have a constant error variance across observations based on plots of residuals vs each predictor variable and the Breusch-Pagan test. Therefore, robust standard errors instead of model based standard errors were used when creating confidence intervals in the following section.
+
+##### Assess model performance on test data and using k-fold cross validation:
+
+Please see .Rmd file "3_HypothesisTestingandFeatureImpactAnalysis.Rmd" for code corresponding to this step (specifically section 5 "Assess Model Performance").
+
+To determine how well our model (the best transformed model) works, I used the model to predict the net_rating of the test set and then calculated the mean squared error (MSE). The MSE measures the average squared difference between the model predictions and true observed net ratings. I also looked at the R-squared value and Adjusted-R squared value, which describe the proportion of variance in the dependent variable (net_rating) that is explained by the covariates in our regression model on our training data.
+
+Finally, I also tested the accuracy using k-fold cross validation with k=5 folds. I did this because a simple test train split can be biased if the training and test set were not allocated randomly. K-fold cross validation helps alleviate such randomness by splitting the data into k subsets, training the model on k-1 subsets, and then calculating the MSE on the hold-out subset. SInce the final metric, total MSE, is obtained by averaging the MSE across folds, it can be a more unbiased measure of model performance than the simple train test split.
+
+##### Hypothesis testing and feature impact analysis:
+
+Please see .Rmd file "3_HypothesisTestingandFeatureImpactAnalysis.Rmd" for code corresponding to this step (specifically section 6 "Hypothesis Testing and Feature Impact Analysis").
+
+Hypothesis testing was conducted using F test to see whether any of the covariates in the best transformed model were significant using the test_data.
+
+The best transformed model was compared to a model with just an intercept term using the ANOVA () function and the p value of the calculated F-statistic was assessed at a 5% significance level to see if collectively the predictors improve the model significantly compared to an intercept only model. Since the obtained p value was \< 0.05, I rejected the null hypothesis and concluded that at least one of the coefficients in the model is not equal to zero.
+
+To see specifically which of the four covariates are significantly associated with net_rating, I did subsequent F- tests comparing the full model to a model with just the covariates of interest excluded. This was done for all four covariates, log(pts), log(reb), log(ast), and log(age). This test was performed and interpreted as described above for the comparison with the intercept only model (5% significance level used).
+
+Finally, I looked at the estimated coefficients for the best transformed model and provided a written interpretation of what each coefficient means in the context of the model to quantify the impact of each covariate. Confidence intervals using robust standard errors were also computed and listed for each covariate.
+
+I concluded the feature analysis with a brief summary of how the results may be useful to NBA coaches and GMs, which will be expanded upon in this report summary below in the Discussion and Conclusions sections.
+
+# Results
+
+Please see the corresponding .Rmd files noted in the Methodology section to view all of the graphs and outputs for each analyses mentioned, particularly for the exploratory data analysis, variable selection, and assumptions check.
+
+To summarize the results of this regression analysis, I have included some of the most important metrics from the model performance assessment on test data and hypothesis testing here.
+
+##### Model performance:
+
+***R-squared:*** 0.11 (training data)
+
+***Adjusted R-squared:*** 0.11 (training data)
+
+***MSE on test data:*** 31
+
+***k-fold cross validation total MSE:*** 30
+
+##### Hypothesis tests for each covariate:
+
+***Covariates signficantly associated with net_rating at 95% signficance level:*** log(reb), log(ast), log(age)
+
+***Covariates not significantly associated with net_rating at 95% significance level:*** log(pts)
+
+Please see code blocks below for F-test outputs and my interpretations of the results:
+
+###### Points per game
+
+```{r}
+
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model5<- lm(net_rating~ log(reb)+log(ast)+log(age),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model5)
+```
+
+The p value of 0.07 is greater than alpha=0.05, so at the 95% significance level, we do not have enough evidence to reject the null hypothesis and and cannot conclude that log(pts) is significantly associated with net rating given that log(reb), log(ast), and log(age) are already included in our model.
+
+###### Rebounds per game
+
+```{r}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model6<- lm(net_rating~ log(pts)+log(ast)+log(age),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model6)
+```
+
+The p value of 1\*10\^-5 is less than alpha=0.05, so at the 95% significance level, so we have enough evidence to reject the null hypothesis and conclude that log(reb) is associated with net rating given that log(pts), log(ast), and log(age) are already included in our model.
+
+###### Assists per game
+
+```{r}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model7<- lm(net_rating~ log(pts)+log(reb)+log(age),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model7)
+```
+
+The p value of 0.002 is less than alpha=0.05, at the 95% significance level, so we have enough evidence to reject the null hypothesis and conclude that log(ast) is associated with net rating given that log(pts), log(reb), and log(age) are already included in our model.
+
+###### Age
+
+```{r}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model8<- lm(net_rating~ log(pts)+log(reb)+log(ast),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model8)
+```
+
+The p value of 2.2\*10\^-16 is less than alpha=0.05, at the 95% significance level, so we have enough evidence to reject the null hypothesis and conclude that log(age) is associated with net rating given that log(pts), log(reb), and log(ast) are already included in our model.
+
+##### Covariate coefficient estimates:
+
+***Interpretation of each coefficient:***
+
+Points: For two players with average points per game which differ by 1% and have the same average rebounds and assists per game and are the same age, the expected net rating for the player whose average points per game is 1% more is equal to 0.61log(1.01)= approximately 0.006 higher net rating.
+
+Rebounds: For two players with average rebounds per game which differ by 1% and have the same average points and assists per game and are the same age, the expected net rating for the player whose average rebounds per game is 1% more is equal to 1.19log(1.01)= approximately 0.011 higher net rating.
+
+Assists: For two players with average assists per game which differ by 1% and have the same average points and rebounds per game and are the same age, the expected net rating for the player whose average rebounds per game is 1% more is equal to 0.61log(1.01)= approximately 0.006 higher net rating.
+
+Age: For two players whose age in years differs by 1% but have the same average points, rebounds, and assists per game, the expected net rating for the player who is older is equal to 7.71log(1.01)= approximately 0.078 higher net rating than the younger player.
+
+***95% Confidence intervals for each coefficient using robust standard errors:***
+
+log(pts): (-34.3,-23.4)
+
+log(reb): (0.661, 1.726)
+
+log(ast): (0.215, 1.018)
+
+log(age): (6.143, 9.271)
+
+# Discussion:
+
+Even with the best transformed model, the model performance metrics were quite low. The mean squared error on the test dataset and the total mean squared error from the k-fold cross validation were both high at approximately 31 and 30 respectively. In general, a lower MSE is better because it indicates that the model's predictions are close to the actual observed values. These results were corroborated by the R-squared and adjusted R-squared values, which were both only 0.11. This means that the proportion of variance in the outcome variable net rating that was explained by the covariates in our regression model was only 11%. Because the model performance metrics were quite low, future studies should look at measuring other potentially important predictor variables that may impact net_rating. Including other relevant predictor variables may improve prediction performance if these additional covariates contain information about a player's net_rating that is not captured by the covariates that are currently in the model.
+
+One limitation of this linear regression model is that our dataset observations contain metrics corresponding to a particular player in a specific NBA season. Therefore, for players that played in the NBA for multiple seasons, we have repeated observations for those players. This can be a problem because it can lead to errors that are not independent between observations (i.e. errors for a given player are not independent of each other). Using a fixed effect or random effect model where we consider each individual player to be a fixed or random effect could help account for this dependency. In addition, the NBA team that a given player played for may also be a clustering factor, and it seems reasonable to believe that the net_rating of one player may affect the net_rating of his teammate. Therefore, it may be useful to also account for NBA team using a fixed or random effect. When there are clustering factors that lead to dependencies in the data, underestimated standard errors and loss of statistical efficiency because each observation contributes less information than if all the observations were independent, so it is like having a smaller sample size to build the model on. Therefore, accounting for these clustering factors in future analyses may also help improve the predictive accuracy of the model.
+
+Although our model's predictive accuracy was not very high on the test data, this regression analysis is still useful because the hypothesis testing indicated which covariates were significantly associated with net_rating. We found that log(reb), log(ast), log(age) were all significantly associated with net_rating, while log(pts) was not. Knowing which variables or player characteristics are associated with a higher net rating or point differential could be useful to NBA coaches or GMs because it suggests which characteristics to look for when selecting players for their teams. Players with a higher point differential are those who when on the court lead their team to outscore their opponent, thus increasing their team's chance of winning. Since teams are constrained by salary caps and only having 12 roster spots, insight into how to select the best available player would be useful.
+
+I was not surprised that rebounds and assists were significant predictors given that these are common metrics often reported for players and used by analysts to talk about player performance. However, I was surprised to see that age was also a significant covariate since sports are generally considered to be a "younger persons game". Age being a significant covariate indicates that when trying to decide between two players that are otherwise equal in their average points, assists, and rebounds per game, an older player has a higher net rating than a younger player. Perhaps older players have more experience or leadership capabilities that allow them to improve the point differential compared to younger players. I was also surprised to find that points per game was not a significant covariate, although the p value of 0.07 was only slightly higher than 0.05, so our interpretation could change based on the significance level we choose. This suggests to me that a player that is a good rebounder or good at making assists is more likely to improve the team's point differential versus their opponent than a player that just averages more points per game. Perhaps this is because when rebounding or making assists, a player is improving their entire team's chances of scoring, which is more likely to improve the team's point differential than just being able to score more points themselves.
+
+# Conclusions:
+
+Although the current model does not have a high predictive accuracy, it indicated that rebounds, assists, and player age are all significantly associated with increasing a team's point differential. These are easily measured metrics that NBA coaches and GMs can use to decide between two players to include on their roster if these players are otherwise equal with regards to all other covariates.
+
+As mentioned in the discussion, future work should possibly look at other variables to measure that may help explain the point differential. For example, including a metric accounting for a player's teammates point differential or a player's defensive abilities may improve the prediction performance. In addition, accounting for clustering effects introduced by having repeated observations on players who played in the NBA across multiple seasons or by having dependencies caused by being on the same team may improve prediction performance.
+
+# References:
+
+Class Notes:
+
+Bettache, N. (2025). *Statistical Methods II, STSCI 6020.* <https://nayelbettache.github.io/STSCI6020.html>
+
+NBA Dataset from Kaggle:
+
+Cirtautas, J. (2023). *NBA Players Biometric, biographic, and basic box score stats from 1996 to 2022 season.* <https://www.kaggle.com/datasets/justinas/nba-players-data?resource=download&select=all_seasons.csv>
+
+Information about Variance Inflation Test:
+
+Singh, V. (2024). *Variance INflation Factor( VIF): Addressing Multicollinearity in Regression Analysis.* <https://www.datacamp.com/tutorial/variance-inflation-factor>

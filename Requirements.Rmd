@@ -1,0 +1,18 @@
+Please use the below script to install and load the required packages for this analysis:
+```{r}
+install.packages("dplyr")
+library(dplyr)
+
+install.packages("lmtest")
+library(lmtest)
+
+install.packages("car")
+library(car)
+
+install.packages("sandwich")
+ library("sandwich")
+
+install.packages("boot")
+library(boot)
+```
+

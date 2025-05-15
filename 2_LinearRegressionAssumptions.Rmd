@@ -1,0 +1,444 @@
+#### Name: Gayatri Anil
+
+#### Date: May 11, 2025
+
+# 2. Preliminary Linear Regression Model and Variable Selection
+
+### Build preliminary model
+
+I am interested in predicting the net rating of a player. I will begin my analysis by fitting a multiple linear regression model that uses box scores (average points, rebounds, and assists per game) and simple demographic information (height, weight, age) as possible predictors.
+
+```{r}
+nba.model1<-lm(net_rating~ pts+reb+ast+player_height+player_weight+age,
+               data=NBA_data_cleaned)
+
+summary(nba.model1)
+```
+
+The R squared and adjusted R squared values are quite low for this model. This suggests that it would be beneficial to perhaps perform feature selection to identify the more important covariates to keep in the model and/or to transform some of the predictors or the outcome variable.
+
+### Variable selection:
+
+To select a better performing model, we will test out which combination of covariates to include using both forwards selection and backwards selection procedures with BIC as the information criterion. However, in this analysis, I would like to include hypothesis testing to see which covariates are significant. But when we use a variable selection procedure like forwards or backwards selection, the variables selected and included in our final model are those that had high values for the test statistic, so the test statistics for the selected model will not follow the expected distribution. To allow for hypothesis testing and valid inference procedures, I will first split the NBA dataset into a training set and test set where we perform variable selection using the training set and calculate test statistics using the test set data.
+
+##### Randomly split NBA dataset into 70% training and 30% testing:
+
+```{r}
+# Sample splitting 70% training and 30% test
+# sample size
+n <- dim(NBA_data_cleaned)[1]
+m <- floor(n * 0.7)
+# generate random training indics (70%)
+train_idx <- sample(1:n, m, replace = FALSE)
+# extract the training data using training indices
+train_set <- NBA_data_cleaned[train_idx,]
+# extract the test data
+test_set <- NBA_data_cleaned[-train_idx,]
+
+```
+
+##### 
+
+##### Forwards selection with BIC
+
+```{r}
+#largest model to consider is the model fit above (nba.model1)
+nba.model1<-lm(net_rating~ pts+reb+ast+player_height+player_weight+age,
+               data=train_set)
+
+#smallest model to consider is the model with only an intercept
+nba.model2<-lm(net_rating~1, data=train_set)
+
+
+out_forward_bic <- step(object = nba.model2, direction = "forward",
+scope = formula(nba.model1), trace = T, k = log(nrow(train_set)))
+summary(out_forward_bic)
+```
+
+##### Backwards selection with BIC
+
+```{r}
+out_backward_bic <- step(object = nba.model1, direction = "backward",
+scope = formula(nba.model1), trace = T, k = log(nrow(train_set)))
+summary(out_backward_bic)
+```
+
+R uses negative BIC criterion, so the best model is the one with the smallest BIC value. Both the forwards and backwards procedure selection converged on the same best final model. This best final model predicts net_rating using the covariates average points per game, average assists per game, average rebounds per game, and age of the player. The best final model had a BIC=17952.15.
+
+# 3. Check Linear Regression Assumptions
+
+We will first save the best model predicted by the fowards and selection procedures as nba.model3
+
+```{r}
+#final backwards and forwards selection model
+nba.model3<-lm(net_rating~ pts+reb+ast+age,
+               data=train_set)
+
+summary(nba.model3)
+
+```
+
+Now we will check if this model (nba.model3) satisfies each of the assumptions for linear regression.
+
+##### **1) Independence of observations: errors across observations should be uncorrelated**
+
+This means that the error terms for one observation should not be related to the error term for another observation. To assess this, I have plotted the fitted values from the model against the residuals.
+
+```{r}
+plot(nba.model3$fitted.values, nba.model3$residuals, main ="Residuals vs Fitted values",
+ xlab = "Fitted values",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+Generally, the residuals seem to be equally spread apart for fitted values between -4 and 4. For higher fitted values (values \>4), the residuals tend to be closer to 0 than for fitted values \<4, but it is not obvious to me from this plot whether the errors across observations are correlated or not. To help verify if the indpenedence assumption holds, we can use the Durbin-Watson test to detect autocorrelation in the residuals (below). The p-value from the Durbin-Watson test is approximately 0.97, which is greater than 0.05 (using a 95% significance level), and so we fail to reject the null hypothesis and there is not significant evidence suggesting there is autocorrelation to the residuals. Therefore, the independence assumption seems to hold.
+
+```{r}
+dwtest(nba.model3)
+```
+
+##### **2) Linearity: Conditional expectation of Y given X is a linear function of X**
+
+```{r}
+#net_rating(y) vs pts (x1) 
+plot(train_set$pts, train_set$net_rating, main ="Net rating (y) vs average points per game (x1)",
+ xlab = "Average points per game",
+ ylab = "Net rating (Team's point differential per 100 possessions while the player is on the court)")
+
+```
+
+```{r}
+#net_rating(y) vs reb (x2) 
+plot(train_set$reb, train_set$net_rating, main ="Net rating (y) vs average rebounds per game (x2)",
+ xlab = "Average rebounds per game",
+ ylab = "Net rating (Team's point differential per 100 possessions while the player is on the court)")
+```
+
+```{r}
+#net_rating(y) vs ast (x3) 
+plot(train_set$ast, train_set$net_rating, main ="Net rating (y) vs average assists per game (x3)",
+ xlab = "Average assists per game",
+ ylab = "Net rating (Team's point differential per 100 possessions while the player is on the court)")
+```
+
+```{r}
+#net_rating(y) vs age (x4) 
+plot(train_set$age, train_set$net_rating, main ="Net rating (y) vs age (x4)",
+ xlab = "Player's age in years",
+ ylab = "Net rating (Team's point differential per 100 possessions while the player is on the court)")
+```
+
+Looking at the residuals vs fitted values plot above, it looks like the residuals are fairly randomly scattered above and below y equals zero and there is no obvious pattern to the residual plot. I also made scatterplots of the outcome variable (net_rating) versus each covariate. If there is a linear relationship, the scatterplot should appear as if the points are clustered along a straight line. The scatterplots for the outcome vs average points per game (x1), average rebounds per game (x2), and average assists per game (x3) looks like the observations are scattered along a straight line with a slightly positive slope. However, the scatterplot for net rating vs age (x4) does not look like the points are clustered along a straight line, and the relationship between net rating and age is likely not linear.
+
+##### 3. Homoskedasticity $var(E_i | X_i )=\sigma^2$
+
+We can check if the constant variance assumption holds by plotting the residuals of the model versus pts (x1), reb (x2), ast (x3), and age(x4).
+
+```{r}
+
+#Residuals vs pts (x1) 
+plot(train_set$pts, nba.model3$residuals, main ="Residuals vs average points per game (x1)",
+ xlab = "Average points per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+
+```
+
+```{r}
+#Residuals vs reb (x2) 
+plot(train_set$reb, nba.model3$residuals, main ="Residuals vs average rebounds per game (x2)",
+ xlab = "Average rebounds per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+```{r}
+#Residuals vs ast (x3) 
+plot(train_set$ast, nba.model3$residuals, main ="Residuals vs average assists per game (x3)",
+ xlab = "Average assists per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+```{r}
+#Residuals vs age (x4) 
+plot(train_set$age, nba.model3$residuals, main ="Residuals vs age (x4)",
+ xlab = "Player age",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+From looking at the aboveplots, it does not seem like the variance (distribution of the errors) is independent of x value for each covariate. For the covariates rebounds and assists, it especially looks like the distribution of the residuals is narrower for higher versus lower values of the covariate. To confirm, I ran a breush pagan test (below). The p value of the bruesh pagan test is approximately 0.015, which is less than 0.05 (95% significance level). Therefore, we reject the null hypothesis, and conclude that there is not a constant error variance and the data is heteroskedastic.
+
+```{r}
+#run breusch pagan test
+bptest(nba.model3)
+```
+
+##### 4) Normality: error terms follow a normal distribution with mean 0 and variance sigma squared
+
+```{r}
+qqPlot(nba.model3$residuals)
+```
+
+The above residuals plots show that the residuals generally seem to fall equally above and below y=0, suggesting that the assumption that the error term has mean zero holds. To see if the error terms follow a normal distribution, we can plot the residuals on a qqPlot. The points seem to follow the qqplot line with most of the points falling within the confidence bands, suggesting that the normality assumption holds.
+
+##### 5) Multicollinearity: predictors should not be nearly perfectly correlated
+
+We can conduct a variance inflation factor test to determine if there is multicollinearity among the predictor variables.
+
+```{r}
+#calculate VIF
+vif(nba.model3)
+```
+
+If VIF=1, there is no multicollinearity, and generally, we are concerned about multicollinearity only if VIF\>5. Since all of the predictors had a VIF\<5, and most were close to 1, the multicollinearity assumption is not violated in our model.
+
+# 4. Assumption Violation Handling
+
+When checking the linear regression assumptions in section 3, I found that the linearity assumption may have been violated, particularly respective to the covariate age, and the constant error variance assumption did not hold. The model met the independence, normality, and multicollinearity assumptions.
+
+##### Transformations of model:
+
+To adjust for the linearity and homoskedasticity assumptions being violated, I will try different transformations of the response variable and covariates (particularly the age covariate) and see if they improve the model. Please note since the net_rating variable has observations with negative values, I did the transformation such that I was taking the logarithm of the (net_rating + constant) and the constant 20 was picked so that all of the net_ratings were shifted to have positive values
+
+```{r}
+#orginal model
+nba.model3<-lm(net_rating~ pts+reb+ast+age,
+               data=train_set)
+
+#transform just response variable
+nba.model3b<-lm(log(net_rating+20)~ pts+reb+ast+age,
+               data=train_set)
+
+#transform just age covariate
+nba.model3c<-lm(net_rating~ pts+reb+ast+log(age),
+               data=train_set)
+
+#transform all of the covariates
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=train_set)
+
+#transform both response and covariates
+nba.model3e<-lm(log(net_rating+20)~ log(pts)+log(reb)+log(ast)+log(age),
+               data=train_set)
+
+#try making age^2 
+nba.model3f<-lm(net_rating~ pts+reb+ast+poly(age,2),
+               data=train_set)
+
+
+
+```
+
+##### Compare models using diagnostic plots:
+
+To compare the original model (nba.model3) to the five potential transformations I tried, I made a plot of the standardized residuals vs fitted values, plot of the observed vs fitted values, and a qqPlot for all 6 total models. In the residual plots, I looked to see if the residuals looked to be randomly scattered above and below zero across the range of fitted values with no clear patterns. For the observed vs fitted values, I looked to see which model best seemed to follow the y=x line or where the fitted value was close to the observed value. For the qqplot, I looked to see that the model followed the qqplot line closely and showed no curved patterns, suggesting that the error distribution is normal. Model (nba.model3d) seemed to have the best residual, observed vs fitted, and qqPlot, so I will use this model in which I have log transformed all of the covariates going forward.
+
+**Residual plots:**
+
+```{r}
+ par(mfrow = c(1,2))
+ plot(fitted.values(nba.model3),rstandard(nba.model3))
+ abline(h=0)
+ plot(fitted.values(nba.model3b),rstandard(nba.model3b))
+ abline(h=0)
+```
+
+```{r}
+ par(mfrow = c(1,2))
+ plot(fitted.values(nba.model3c),rstandard(nba.model3c))
+ abline(h=0)
+ plot(fitted.values(nba.model3d),rstandard(nba.model3d))
+ abline(h=0)
+```
+
+```{r}
+ par(mfrow = c(1,2))
+ plot(fitted.values(nba.model3e),rstandard(nba.model3e))
+ abline(h=0)
+plot(fitted.values(nba.model3f),rstandard(nba.model3f))
+ abline(h=0)
+```
+
+**Plot of fitted vs observed values:**
+
+```{r}
+plot(nba.model3$fitted.values, train_set$net_rating, main ="Observed vs Fitted values for nba.model3 ",
+ xlab = "Fitted values",
+ ylab = "Observed values for net_rating")
+ abline(a=0, b=1,col="red")
+ 
+
+```
+
+```{r}
+plot(nba.model3b$fitted.values, train_set$net_rating, main ="Observed vs Fitted values for nba.model3b",
+ xlab = "Fitted values",
+ ylab = "Observed values for net_rating")
+ abline(a=0, b=1,col="red")
+```
+
+```{r}
+plot(nba.model3c$fitted.values, train_set$net_rating, main ="Observed vs Fitted values for nba.model3c",
+ xlab = "Fitted values",
+ ylab = "Observed values for net_rating")
+ abline(a=0, b=1,col="red")
+```
+
+```{r}
+plot(nba.model3d$fitted.values, train_set$net_rating, main ="Observed vs Fitted values for nba.model3d",
+ xlab = "Fitted values",
+ ylab = "Observed values for net_rating")
+ abline(a=0, b=1,col="red")
+```
+
+```{r}
+plot(nba.model3e$fitted.values, train_set$net_rating, main ="Observed vs Fitted values for nba.model3e",
+ xlab = "Fitted values",
+ ylab = "Observed values for net_rating")
+ abline(a=0, b=1,col="red")
+```
+
+```{r}
+plot(nba.model3f$fitted.values, train_set$net_rating, main ="Observed vs Fitted values for nba.model3f",
+ xlab = "Fitted values",
+ ylab = "Observed values for net_rating")
+ abline(a=0, b=1,col="red")
+```
+
+**qqPlots to check for normality**
+
+```{r}
+par(mfrow = c(1,2))
+#qqplot  
+qqnorm(rstandard(nba.model3))
+ abline(0,1,lty=2)
+ 
+qqnorm(rstandard(nba.model3b))
+ abline(0,1,lty=2) 
+
+```
+
+```{r}
+par(mfrow = c(1,2))
+#qqplot  
+qqnorm(rstandard(nba.model3c))
+ abline(0,1,lty=2)
+ 
+qqnorm(rstandard(nba.model3d))
+ abline(0,1,lty=2)
+```
+
+```{r}
+par(mfrow = c(1,2))
+#qqplot  
+qqnorm(rstandard(nba.model3e))
+ abline(0,1,lty=2)
+ 
+qqnorm(rstandard(nba.model3f))
+ abline(0,1,lty=2)
+```
+
+In particular, I tried to correct for the linearity and homoskedasticity assumptions being violated using transformations of the model. Below, I have specifically compared the original model and the transformed model in respect to these assumptions.
+
+##### Correct for linearity:
+
+```{r}
+plot(nba.model3$fitted.values, nba.model3$residuals, main ="Residuals vs Fitted values for original model",
+ xlab = "Fitted values",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+
+ 
+
+
+```
+
+```{r}
+plot(nba.model3d$fitted.values, nba.model3d$residuals, main ="Residuals vs Fitted values for transformed model",
+ xlab = "Fitted values",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+When I compare the residual vs fitted value plots, it looks like both the original and transformed models have residual values randomly scattered above and below y=0 and there are no obvious patterns to the residuals, such as a curved or wavy pattern. It also looks like the spread of the residuals is more even across different fitted values for the transformed model than the original model. Although it is not very obvious whether the transformed model better satisfies the linearity assumption than the original model, the residual plot suggests that the transformed model does satisfy the linearity assumption.
+
+##### Correct for heteroskedasticity:
+
+```{r}
+par(mfrow = c(1,2))
+
+#Residuals vs pts (x1) 
+plot(train_set$pts, nba.model3$residuals, main ="Residuals vs average points per game (x1) on original model",
+ xlab = "Average points per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+ 
+ #Residuals vs pts (x1) 
+plot(train_set$pts, nba.model3d$residuals, main ="Residuals vs average points per game (x1) on transformed model",
+ xlab = "Average points per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+```{r}
+par(mfrow = c(1,2))
+#Residuals vs reb (x2) 
+plot(train_set$reb, nba.model3$residuals, main ="Residuals vs average rebounds per game (x2) on original model",
+ xlab = "Average rebounds per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+ 
+ #Residuals vs reb (x2) 
+plot(train_set$reb, nba.model3d$residuals, main ="Residuals vs average rebounds per game (x2) on transformed model",
+ xlab = "Average rebounds per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+```{r}
+par(mfrow = c(1,2))
+
+#Residuals vs ast (x3) 
+plot(train_set$ast, nba.model3$residuals, main ="Residuals vs average assists per game (x3) on original model",
+ xlab = "Average assists per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+ 
+ #Residuals vs ast (x3) 
+plot(train_set$ast, nba.model3d$residuals, main ="Residuals vs average assists per game (x3) on transformed model",
+ xlab = "Average assists per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+```{r}
+par(mfrow = c(1,2))
+
+#Residuals vs age (x4) 
+plot(train_set$age, nba.model3$residuals, main ="Residuals vs age (x4) on original model",
+ xlab = "Player age",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+ 
+ #Residuals vs age (x4) 
+plot(train_set$age, nba.model3$residuals, main ="Residuals vs age (x4) on transformed model",
+ xlab = "Player age",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+```{r}
+#run breusch pagan test
+bptest(nba.model3)
+```
+
+```{r}
+#run breusch pagan test
+bptest(nba.model3d)
+```
+
+Looking at the plots of each covariate vs the residuals, it is not clear for any of the covariates whether the transformed model has a more constant error variance than the original model. Especially in regards to the assists covariate, it especially looks like the distribution of the residuals is narrower for higher vs lower values of the covariate. I ran a Breush Pagan test on both the original and transformed model. The p value for the transformed model was approximately 0.036 vs 0.015 in the original model. The p value is still less than 0.05, and so we would still reject the null hypothesis and conclude that the transformed model is heteroskedastic. However, since the transformed model has a higher p value than the original model, this suggests that the transformation helped correct a little of the heteroskedasticity.
+
+When the model violates the homoskedasticity assumption, its estimates are still unbiased, however the standard errors are larger than estimated. To better correct for this, in the following sections where we compute confidence intervals and perform hypothesis tests, I will use robust vs model based standard errors.

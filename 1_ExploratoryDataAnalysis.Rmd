@@ -1,0 +1,263 @@
+#### Name: Gayatri Anil
+
+#### Date: May 11, 2025
+
+The following is a linear regression analysis looking at whether we can predict an NBA team's point differential while a particular player is on the court using other information known about the player, such as demographic information and basic box score statistics. The dataset used is the NBA Players dataset curated by Justinas Cirtuatas and available on Kaggle. It includes player information from the 1996-20222 NBA seasons. Specifically, each observation (i.e. row in the data) corresponds to a particular player in a specific NBA season. For this analysis, I have downloaded the dataset from Kaggle and the .csv file is available in this repository in the folder "nba_data".
+
+
+# 1. Exploratory Data Analysis
+
+### Read in NBA Players Dataset:
+
+```{r}
+NBA_data<-read.csv("all_seasons.csv")
+```
+
+### Description of variables in dataset:
+
+```{r}
+#The output lists the names of all variables in this dataset
+names(NBA_data)
+```
+
+Below is a brief description of all variables included in this dataset, which was obtained from Justinas Cirtauta's description provided on Kaggle (<https://www.kaggle.com/datasets/justinas/nba-players-data?resource=download&select=all_seasons.csv>).
+
+**X:** Index value for each row
+
+**player_name:** Name of the player
+
+**team_abbreviation:** Abbreviated name of the team the player played for (at the end of the season)
+
+**age:** Age of the player during that season
+
+**player_height:** Height of the player (in centimeters)
+
+**player_weight:** Weight of the player (in kilograms) during that season
+
+**college:** Name of the college the player attended
+
+**country:** Name of the country the player was born in (not necessarily the nationality)
+
+**draft_year:** Year the player was drafted
+
+**draft_round:** Draft round the player was picked
+
+**draft_number:** The number at which the player was picked in his draft round
+
+**gp:** Games played throughout the season
+
+**pts:** Average number of points scored
+
+**reb:** Average number of rebounds grabbed
+
+**ast:** Average number of assists distributed
+
+**net_rating:** Team's point differential per 100 possessions while the player is on the court
+
+**oreb_pct:** Percentage of available offensive rebounds the player grabbed while he was on the floor
+
+**dreb_pct:** Percentage of available defensive rebounds the player grabbed while he was on the floor
+
+**usg_pct:** Percentage of team plays used by the player while he was on the floor (FGA + Possession Ending FTA + TO)/ POSS)
+
+**ts_pct:** Measure of the player's shooting efficiency that takes into account free throws, 2 and 3 point shots
+
+**ast_pct:** Percentage of teammate field goals the player assisted while he was on the floor
+
+**season:** NBA season
+
+### Data cleaning and preprocessing:
+
+The purpose of this analysis is to predict an NBA team's point differential while a particular player is on the court (net_rating) using other information known about the player, such as demographic information and basic box score statistics. Based on the objective of this analysis and the description of the variables provided by the curator of this dataset, I selected a subset of the provided variables to work with in this analysis to avoid repetitive variables.
+
+##### Subset variables:
+
+```{r}
+NBA_data_cleaned<-NBA_data%>%
+  select(player_name,team_abbreviation, age,
+         player_height,player_weight,
+         gp,pts,reb,ast,net_rating,season)
+
+names(NBA_data_cleaned)
+```
+
+The dataset that we will be working with for this analysis now has 11 variables, which are listed below:
+
+**player_name:** Name of the player
+
+**team_abbreviation:** Abbreviated name of the team the player played for (at the end of the season)
+
+**age:** Age of the player during that season
+
+**player_height:** Height of the player (in centimeters)
+
+**player_weight:** Weight of the player (in kilograms) during that season
+
+**gp:** Games played throughout the season
+
+**pts:** Average number of points scored
+
+**reb:** Average number of rebounds grabbed
+
+**ast:** Average number of assists distributed
+
+**net_rating:** Team's point differential per 100 possessions while the player is on the court
+
+**season:** NBA season
+
+##### 
+
+##### Assign correct variable type to all variables:
+
+```{r}
+#see current variable type designations
+str(NBA_data_cleaned)
+
+#convert variable types that need to be changed
+NBA_data_cleaned$team_abbreviation<- as.factor(NBA_data_cleaned$team_abbreviation)
+NBA_data_cleaned$age <- as.integer(NBA_data_cleaned$age)
+NBA_data_cleaned$season<- as.factor(NBA_data_cleaned$season)
+
+#Check that variable types are now all correct
+str(NBA_data_cleaned)
+```
+
+##### Filter player data to only include those who played in 50% of games that season or more:
+
+This dataset currently includes any player who played in at least 1 NBA game that season between 1996-2022. However, if a player only played in very few games, their box statistics, such as average points per game (pts) or point differential (net_rating) can be very high or very low. We will restrict the dataset to only include information from players that played in at least 50 out of the 82 games in an NBA season to get more stable box scores (Note in some older seasons, it looks like there may have be slightly more than 82 games played in that season).
+
+```{r}
+NBA_data_cleaned<- NBA_data_cleaned%>%
+  filter(NBA_data_cleaned$gp>49)
+```
+
+##### Verify there are no missing values
+
+```{r}
+sum(is.na(NBA_data_cleaned))
+```
+
+The above returns 0 so there are no missing values in our subsetted dataframe.
+
+### Visualize distribution of variables:
+
+Note I did not look at the distribution or summary statistics corresponding to player name (which is more like a grouping or index variable) or games played (which was included primarily to filter the dataset to only include observations from players who played a minimum of 50 games per season.
+
+#### net_rating (outcome variable):
+
+##### Summary statistics:
+
+```{r}
+summary(NBA_data_cleaned$net_rating)
+```
+
+The median net_rating (which is the player's team's point differential per 100 possessions while the player is on the court) is 0.1 points and the mean net_rating is \~-0.04 points. The range of point differentials is (-19.6 points, 18.9 points).
+
+##### Distribution of net_rating
+
+```{r}
+hist(NBA_data_cleaned$net_rating, xlim=c(-25,25), ylim=c(0,1200), main = "Distribution of team point differential per 100 possessions for NBA players between 1996-2022", xlab = "Team point differential per 100 possessions while the player is on the court (net_rating)")
+```
+
+The above histogram shows the distribution of player point differentials (net_rating) for all players between 1996-2022 who played in at least 50 games in that season. There does not seem to be any obvious outliers, and the point differential looks as if it follows an approximately normal distribution with the majority of observations centered around the mean of -0.04 points (which is close to 0).
+
+#### team_abbreviation and season:
+
+The variables team_abbreviation and season are treated as factors, so we will simply look at a table to see how many observations per category are present.
+
+```{r}
+table(NBA_data_cleaned$team_abbreviation)
+```
+
+Each team has at least 20 observations per team. The teams with lower numbers of player observations are those where the NBA team moved to a different city (For example, VAN or the Vancouver Grizzlies moved to become MEM or the Memphis Grizzlies). This is consistent with what is expected.
+
+```{r}
+table(NBA_data_cleaned$season)
+```
+
+During each NBA season, there seems to be between 280-310 player observations per season. The seasons with lower number of player observations are 1998-99 and 2011-12 where there were lockouts for contract negotiations and 2020-21 when the pandemic occurred, which both shortened the NBA season length.
+
+#### player height, weight, age:
+
+```{r}
+summary(NBA_data_cleaned$age)
+```
+
+```{r}
+hist(NBA_data_cleaned$age, main="Distribution of observations by player's age", xlab="Age of player (yrs)")
+```
+
+From the summary statistics and histogram, the players in the dataset ranged in age from 18 to 43, with the median age being 27. There does not appear to be any obvious outliers in regards to age.
+
+```{r}
+summary(NBA_data_cleaned$player_height)
+```
+
+```{r}
+hist(NBA_data_cleaned$player_height, main="Distribution of observations by player's height", xlab="Height of player (cm)", xlim=c(160,240), ylim = c(0,2000))
+```
+
+From the summary statistics and histogram, the mean player height was approximately 201 cm with the smallest height being 160 cm and tallest height being 231 cm. The few player heights below 170 cm seem like they may be outliers (from the dataset, we can see they correspond to the same two players across the seasons they played, Muggsy Bogues and Earl Boykins).
+
+```{r}
+summary(NBA_data_cleaned$player_weight)
+```
+
+```{r}
+hist(NBA_data_cleaned$player_weight, xlim=c(60,160),main="Distribution of observations by player's weight", xlab="Weight of player (kg)")
+```
+
+From the summary statistics and histogram, the mean player weight was approximately 100 kg with the lightest player being 60 kg and the heaviest player being 154 kg. The few player weights above 140 kg seem like they may be outliers (from the dataset, we can see they correspond to the same two players across the seasons they played, Oliver Miller and Shaquille O'Neal).
+
+For the sake of this analysis, I will remove the player observations with outlier heights and weights.
+
+```{r}
+NBA_data_cleaned<-NBA_data_cleaned%>%
+  filter(NBA_data_cleaned$player_height>170 & NBA_data_cleaned$player_weight<140)
+```
+
+#### pts, ast, reb
+
+Below are the summary statistics and distributions for the numerical variables that are common box statistics: avg points per game, assists per game, and rebounds per game.
+
+```{r}
+summary(NBA_data_cleaned$pts)
+```
+
+```{r}
+hist(NBA_data_cleaned$pts, xlim=c(0,45), ylim=c(0,1500),main="Distribution of observations by average points per game (pts)", xlab="Average points per game (pts)")
+```
+
+The average number of points per game was approximately 11 and the range was from 0 to 36 points per game. From the histogram, we can see that the distribution is right skewed, but there does not seem to be any obvious outliers in regards to points per game.
+
+```{r}
+summary(NBA_data_cleaned$ast)
+```
+
+```{r}
+hist(NBA_data_cleaned$ast, xlim=c(0,14), ylim=c(0,2500),main="Distribution of observations by average assists per game (ast)", xlab="Average assists per game (ast)")
+```
+
+The average number of assists per game was approximately 2 and the range was from 0 to 12 assists. From the histogram, we can see that the distribution is right skewed, but there does not seem to be any obvious outliers in regards to assists per game.
+
+```{r}
+summary(NBA_data_cleaned$reb)
+```
+
+```{r}
+hist(NBA_data_cleaned$reb, xlim=c(0,20), ylim=c(0,2000),main="Distribution of observations by average rebounds per game (reb)", xlab="Average rebounds per game (reb)")
+```
+
+The average number of rebounds per game was approximately 4 and the range was from 0 to 16 rebounds. From the histogram, we can see that the distribution is right skewed, but there does not seem to be any obvious outliers in regards to rebounds per game.
+
+### Visualize relationships between variables
+
+```{r}
+pairs(NBA_data_cleaned[,-c(1,2,11)])
+#pairs(brexit.data[, -1,2,11])
+
+```
+
+I used the pairs command to make multiple plots of my variables of interest against each other. It looks like there is a strong positive linear association between player height and player weight. None of the other variable comparisons stand out as having strong linear associations.
+
+Between the outcome variable of interest, net_rating, and the other variables, it looks like the correlation between age and net_rating, player height and net_rating, player weight and net_rating, and games played and net_rating is very weak. It looks as if there is a moderate positive linear relationship between net_rating and the variables average points per game, average rebounds per game, and average assists per game.

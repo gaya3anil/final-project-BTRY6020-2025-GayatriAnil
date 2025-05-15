@@ -1,0 +1,176 @@
+#### Name: Gayatri Anil
+
+#### Date: May 11, 2025
+
+In scripts 1 and 2, we performed exploratory analysis of the NBA data, split the NBA data into a training and testing dataset, and then performed backwards and forwards selection using the training data to determine which predictors specifically we should include in the model. Both the backwards and forwards selection methods converged on the same best model, where the predictors were average points per game, average rebounds per game, average assists per game, and age of the player. We then checked whether this best model satisfied the linear regression assumptions and ended up transforming the covariates with a log transform to better satisfy the linearity and heteroskedasticity assumptions.
+
+# 5. Assess Model Performance
+
+To determine how well our model (the transformed model nba.model3d) works, we will use this model to predict the outcome (net_rating) on our test data and calculate the mean squared error (MSE)
+
+```{r}
+#transformed model summary
+summary(nba.model3d)
+```
+
+```{r}
+#Predict the net_rating on test data (new data) using the nba.model3d that was fit on the training set
+y_hat <- predict(nba.model3d, test_set)
+
+# Calculate the error: mean squared error (MSE)
+y_true <- test_set$net_rating
+
+pred_error <- mean((y_hat - y_true)^2)
+pred_error
+```
+
+The mean squared error (MSE) of our transformed model on our test_dataset for predicting net_rating is approximately 31. In general, a lower MSE is better because it indicates that the model's predictions are close to the actual observed values. The MSE of our model is somewhat high, and this aligns with the R-squared and Adjusted R-squared values of 0.11 for our model. R-squared is a metric that tells us the proportion of variance in the dependent variable that is explained by the covariates in our regression model on our training data. Adjusted-R squared is a similar metric that penalizes for model complexity (having many predictors). The R-squared value of our model suggests that only 11% of the variance in net_rating was accounted for by our model (ideally, we would like our R-squared value to be as high as possible, preferably over 0.7). This indicates that there are perhaps other important predictor variables that impact net_rating that are not accounted for by our model. Further follow up studies may benefit from looking at other predictors to measure that could help explain net_rating, such as the net_rating of a player's teammates or the team's win record that season.
+
+Below, I also tested the model's accuracy using k-fold cross validation with k=5 folds. I did this because a simple test train split can be biased if the training and test set were not allocated randomly. K-fold cross validation helps alleviate such randomness by splitting the data into k subsets, training the model on k-1 subsets, and then calculating the MSE on the hold-out subset. SInce the final metric, total MSE, is obtained by averaging the MSE across folds, it can be a more unbiased measure of model performance than the simple train test split. Below, we found that the total MSE on our hold-out subsets was approximately 30, which is very close to the MSE for our model obtained on the test set of 31.
+
+```{r}
+
+#fit model using glm to use k-fold cross validation
+nba.model3d.glm <- glm(net_rating ~ log(pts) + log(reb) + log(ast) + log(age), data = NBA_data_cleaned)
+summary(nba.model3d.glm)
+
+
+```
+
+```{r}
+#cross validation error
+err_cv <- cv.glm(NBA_data_cleaned, nba.model3d.glm, K=5)$delta[1]
+err_cv
+```
+
+# 6. Hypothesis Testing and Feature Impact Analysis:
+
+Although our model's predictive accuracy was not very high on the test data, it could still be helpful to see if any of the included covariates in the model are significant in regards to net_rating. I will use a F-test to see whether any of the covariates in our model are significant using the test_data. The null and alternative hypotheses are as follows:
+
+$H_0$: $\beta_{pts}$= $\beta_{reb}$= $\beta_{ast}$= $\beta_{age}$= 0
+
+$H_A$: At least one of the coefficients is not equal to zero
+
+```{r}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model4<- lm(net_rating~1,
+               data=test_set)
+
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model4)
+```
+
+The f statistic of the comparison is equal to F= 51.The p value of the model is \< 2.2 ∗ 10−16 aka a very small value. Since the p value is less than alpha=0.05, at the 95% significance level, we have enough evidence to reject the null hypothesis and conclude that at least one of the coefficients in the model is not equal to zero and collectively, these predictors improve the model significantly compared to an intercept only model. To determine which predictors specifically are significant, we can do anova tests comparing the full model to a model with just the covariate of interest excluded.
+
+### Quantify the impact of each feature:
+
+##### Use Anova tests to see which features are significant:
+
+###### Points per game
+
+```{r}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model5<- lm(net_rating~ log(reb)+log(ast)+log(age),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model5)
+```
+
+The p value of 0.07 is greater than alpha=0.05, so at the 95% significance level, we do not have enough evidence to reject the null hypothesis and and cannot conclude that log(pts) is significantly associated with net rating given that log(reb), log(ast), and log(age) are already included in our model.
+
+###### Rebounds per game
+
+```{r}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model6<- lm(net_rating~ log(pts)+log(ast)+log(age),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model6)
+```
+
+The p value of 1\*10\^-5 is less than alpha=0.05, so at the 95% significance level, so we have enough evidence to reject the null hypothesis and conclude that log(reb) is associated with net rating given that log(pts), log(ast), and log(age) are already included in our model.
+
+###### Assists per game
+
+```{r}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model7<- lm(net_rating~ log(pts)+log(reb)+log(age),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model7)
+```
+
+The p value of 0.002 is less than alpha=0.05, at the 95% significance level, so we have enough evidence to reject the null hypothesis and conclude that log(ast) is associated with net rating given that log(pts), log(reb), and log(age) are already included in our model.
+
+###### Age
+
+```{r}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model8<- lm(net_rating~ log(pts)+log(reb)+log(ast),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model8)
+```
+
+The p value of 2.2\*10\^-16 is less than alpha=0.05, at the 95% significance level, so we have enough evidence to reject the null hypothesis and conclude that log(age) is associated with net rating given that log(pts), log(reb), and log(ast) are already included in our model.
+
+##### Quantify the impact of each feature:
+
+```{r}
+summary(nba.model3d)
+```
+
+```{r}
+nba.model3d$coefficients[2]*log(1.01) #pts
+
+nba.model3d$coefficients[3]*log(1.01) #reb
+
+nba.model3d$coefficients[4]*log(1.01) #ast
+
+nba.model3d$coefficients[5]*log(1.01) #age
+```
+
+Above, we found that the covariates log(reb), log(ast), log(age) were significant to the model, while log(pts) was not:
+
+Points: For two players with average points per game which differ by 1% and have the same average rebounds and assists per game and are the same age, the expected net rating for the player whose average points per game is 1% more is equal to 0.61log(1.01)= approximately 0.006 higher net rating.
+
+Rebounds: For two players with average rebounds per game which differ by 1% and have the same average points and assists per game and are the same age, the expected net rating for the player whose average rebounds per game is 1% more is equal to 1.19log(1.01)= approximately 0.011 higher net rating.
+
+Assists: For two players with average assists per game which differ by 1% and have the same average points and rebounds per game and are the same age, the expected net rating for the player whose average rebounds per game is 1% more is equal to 0.61log(1.01)= approximately 0.006 higher net rating.
+
+Age: For two players whose age in years differs by 1% but have the same average points, rebounds, and assists per game, the expected net rating for the player who is older is equal to 7.71log(1.01)= approximately 0.078 higher net rating than the younger player.
+
+##### Confidence intervals for signficant coefficients
+
+Because when we were checking linear regression assumptions we found that the transformed model was still heteroskedastic, I will use robust standard errors over model based standard errors to form 95% confidence intervals for each coefficient.
+
+```{r}
+### Calculate the lower and upper part of the CI using robust standard errors
+ # Create 95% confidence intervals using robust standard errors
+ coefci(nba.model3d, level = .95, vcov. = vcovHC(nba.model3d, type = "HC3"))
+```
+
+The 95% confidence interval using robust standard errors for log(pts) is (-34.3,-23.4), for log(reb) is (0.661, 1.726), for log(ast) is (0.215, 1.018), and for log(age) is (6.143, 9.271).
+
+##### Practical significance of findings:
+
+For NBA coaches, general managers, and owners, it is beneficial to draft and play players who when on the court improve the team's performance. The metric net_rating is a proxy measure for this because it measures the team's point differential per 100 possessions while the player is on the court. So, players with a higher net_rating are those who when on the court lead their team to outscore their opponent, thus increasing the team's chance of winning.
+
+However, NBA teams are practically constrained by a salary cap, only having two draft picks per year (in modern times), and only having 12 roster spots. So, for a given roster spot, the team needs to pick the best available player that can maximize the team's chance of winning or improve their point differential.
+
+This study considered both demographic and common player statistics to see if they were helpful for predicting a player's net_rating. In section 5, we found that the model's predictive accuracy in test data was not very high when considering MSE and k-fold total MSE. In addition, the R-squared value and adjusted R-squared value were quite low. This indicates that there are probably other important important predictor variables that impact net_rating that are not accounted for by our model. In the future, it would be beneficial to measure other predictors that could impact net_rating, such as the net_rating of a player's teammates or the team's win record that season. However, although the model's predictive accuracy was low, we did find that the covariates rebounds per game, assists per game, and player age were significantly associated with net rating, while points per game was not. This information is still potentially useful for NBA coaches and GMS. Knowing this could help guide GMs on who to draft or coaches on which player to play because if, for example, they are trying to decide between two players who for example are otherwise similar in points, rebounds, and assists per game but one player is older than the other, it may actually be beneficial to play the older player because their net_rating is higher.

@@ -1,0 +1,1178 @@
+---
+output:
+  pdf_document:
+    latex_engine: lualatex
+    keep_tex: true
+---
+
+#### Name: Gayatri Anil
+
+#### Date: May 11, 2025
+\\
+
+The following is a linear regression analysis looking at whether we can predict an NBA team's point differential while a particular player is on the court using other information known about the player, such as demographic information and basic box score statistics. The dataset used is the NBA Players dataset curated by Justinas Cirtuatas and available on Kaggle. It includes player information from the 1996-20222 NBA seasons. Specifically, each observation (i.e. row in the data) corresponds to a particular player in a specific NBA season. For this analysis, I have downloaded the dataset from Kaggle and the .csv file is available in this repository in the folder "nba_data".
+
+# Packages Required:
+
+```{r}
+#install.packages("dplyr")
+library(dplyr)
+
+#install.packages("lmtest")
+library(lmtest)
+
+#install.packages("car")
+library(car)
+
+#install.packages("sandwich")
+ library("sandwich")
+
+#install.packages("boot")
+library(boot)
+```
+
+# 1. Exploratory Data Analysis
+
+### Read in NBA Players Dataset:
+
+```{r}
+NBA_data<-read.csv("all_seasons.csv")
+```
+
+### Description of variables in dataset:
+
+```{r}
+#The output lists the names of all variables in this dataset
+names(NBA_data)
+```
+
+Below is a brief description of all variables included in this dataset, which was obtained from Justinas Cirtauta's description provided on Kaggle (<https://www.kaggle.com/datasets/justinas/nba-players-data?resource=download&select=all_seasons.csv>).
+
+**X:** Index value for each row
+
+**player_name:** Name of the player
+
+**team_abbreviation:** Abbreviated name of the team the player played for (at the end of the season)
+
+**age:** Age of the player during that season
+
+**player_height:** Height of the player (in centimeters)
+
+**player_weight:** Weight of the player (in kilograms) during that season
+
+**college:** Name of the college the player attended
+
+**country:** Name of the country the player was born in (not necessarily the nationality)
+
+**draft_year:** Year the player was drafted
+
+**draft_round:** Draft round the player was picked
+
+**draft_number:** The number at which the player was picked in his draft round
+
+**gp:** Games played throughout the season
+
+**pts:** Average number of points scored
+
+**reb:** Average number of rebounds grabbed
+
+**ast:** Average number of assists distributed
+
+**net_rating:** Team's point differential per 100 possessions while the player is on the court
+
+**oreb_pct:** Percentage of available offensive rebounds the player grabbed while he was on the floor
+
+**dreb_pct:** Percentage of available defensive rebounds the player grabbed while he was on the floor
+
+**usg_pct:** Percentage of team plays used by the player while he was on the floor (FGA + Possession Ending FTA + TO)/ POSS)
+
+**ts_pct:** Measure of the player's shooting efficiency that takes into account free throws, 2 and 3 point shots
+
+**ast_pct:** Percentage of teammate field goals the player assisted while he was on the floor
+
+**season:** NBA season
+
+### Data cleaning and preprocessing:
+
+The purpose of this analysis is to predict an NBA team's point differential while a particular player is on the court (net_rating) using other information known about the player, such as demographic information and basic box score statistics. Based on the objective of this analysis and the description of the variables provided by the curator of this dataset, I selected a subset of the provided variables to work with in this analysis to avoid repetitive variables.
+
+##### Subset variables:
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+NBA_data_cleaned<-NBA_data%>%
+  select(player_name,team_abbreviation, age,
+         player_height,player_weight,
+         gp,pts,reb,ast,net_rating,season)
+
+names(NBA_data_cleaned)
+```
+
+The dataset that we will be working with for this analysis now has 11 variables, which are listed below:
+
+**player_name:** Name of the player
+
+**team_abbreviation:** Abbreviated name of the team the player played for (at the end of the season)
+
+**age:** Age of the player during that season
+
+**player_height:** Height of the player (in centimeters)
+
+**player_weight:** Weight of the player (in kilograms) during that season
+
+**gp:** Games played throughout the season
+
+**pts:** Average number of points scored
+
+**reb:** Average number of rebounds grabbed
+
+**ast:** Average number of assists distributed
+
+**net_rating:** Team's point differential per 100 possessions while the player is on the court
+
+**season:** NBA season
+
+##### 
+
+##### Assign correct variable type to all variables:
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#see current variable type designations
+str(NBA_data_cleaned)
+
+#convert variable types that need to be changed
+NBA_data_cleaned$team_abbreviation<- as.factor(NBA_data_cleaned$team_abbreviation)
+NBA_data_cleaned$age <- as.integer(NBA_data_cleaned$age)
+NBA_data_cleaned$season<- as.factor(NBA_data_cleaned$season)
+
+#Check that variable types are now all correct
+str(NBA_data_cleaned)
+```
+
+##### Filter player data to only include those who played in 50% of games that season or more:
+
+This dataset currently includes any player who played in at least 1 NBA game that season between 1996-2022. However, if a player only played in very few games, their box statistics, such as average points per game (pts) or point differential (net_rating) can be very high or very low. We will restrict the dataset to only include information from players that played in at least 50 out of the 82 games in an NBA season to get more stable box scores (Note in some older seasons, it looks like there may have be slightly more than 82 games played in that season).
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+NBA_data_cleaned<- NBA_data_cleaned%>%
+  filter(NBA_data_cleaned$gp>49)
+```
+
+##### Verify there are no missing values
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+sum(is.na(NBA_data_cleaned))
+```
+
+The above returns 0 so there are no missing values in our subsetted dataframe.
+
+### Visualize distribution of variables:
+
+Note I did not look at the distribution or summary statistics corresponding to player name (which is more like a grouping or index variable) or games played (which was included primarily to filter the dataset to only include observations from players who played a minimum of 50 games per season).
+
+#### net_rating (outcome variable):
+
+##### Summary statistics:
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+summary(NBA_data_cleaned$net_rating)
+```
+
+The median net_rating (which is the player's team's point differential per 100 possessions while the player is on the court) is 0.1 points and the mean net_rating is \~-0.04 points. The range of point differentials is (-19.6 points, 18.9 points).
+
+##### Distribution of net_rating
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+hist(NBA_data_cleaned$net_rating, xlim=c(-25,25), ylim=c(0,1200), 
+     main = "Distribution of team point differential per 
+     100 possessions for NBA players between 1996-2022", 
+     xlab = "Team point differential per 100 possessions 
+     while the player is on the court (net_rating)")
+```
+
+The above histogram shows the distribution of player point differentials (net_rating) for all players between 1996-2022 who played in at least 50 games in that season. There does not seem to be any obvious outliers, and the point differential looks as if it follows an approximately normal distribution with the majority of observations centered around the mean of -0.04 points (which is close to 0).
+
+#### team_abbreviation and season:
+
+The variables team_abbreviation and season are treated as factors, so we will simply look at a table to see how many observations per category are present.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+table(NBA_data_cleaned$team_abbreviation)
+```
+
+Each team has at least 20 observations per team. The teams with lower numbers of player observations are those where the NBA team moved to a different city (For example, VAN or the Vancouver Grizzlies moved to become MEM or the Memphis Grizzlies). This is consistent with what is expected.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+table(NBA_data_cleaned$season)
+```
+
+During each NBA season, there seems to be between 280-310 player observations per season. The seasons with lower number of player observations are 1998-99 and 2011-12 where there were lockouts for contract negotiations and 2020-21 when the pandemic occurred, which both shortened the NBA season length.
+
+#### player height, weight, age:
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+summary(NBA_data_cleaned$age)
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+hist(NBA_data_cleaned$age, 
+     main="Distribution of observations by player's age", 
+     xlab="Age of player (yrs)")
+```
+
+From the summary statistics and histogram, the players in the dataset ranged in age from 18 to 43, with the median age being 27. There does not appear to be any obvious outliers in regards to age.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+summary(NBA_data_cleaned$player_height)
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+hist(NBA_data_cleaned$player_height, 
+     main="Distribution of observations by player's height", 
+     xlab="Height of player (cm)", xlim=c(160,240), 
+     ylim = c(0,2000))
+```
+
+From the summary statistics and histogram, the mean player height was approximately 201 cm with the smallest height being 160 cm and tallest height being 231 cm. The few player heights below 170 cm seem like they may be outliers (from the dataset, we can see they correspond to the same two players across the seasons they played, Muggsy Bogues and Earl Boykins).
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+summary(NBA_data_cleaned$player_weight)
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+hist(NBA_data_cleaned$player_weight, 
+     xlim=c(60,160),main="Distribution of observations by player's weight", 
+     xlab="Weight of player (kg)")
+```
+
+From the summary statistics and histogram, the mean player weight was approximately 100 kg with the lightest player being 60 kg and the heaviest player being 154 kg. The few player weights above 140 kg seem like they may be outliers (from the dataset, we can see they correspond to the same two players across the seasons they played, Oliver Miller and Shaquille O'Neal).
+
+For the sake of this analysis, I will remove the player observations with outlier heights and weights.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+NBA_data_cleaned<-NBA_data_cleaned%>%
+  filter(NBA_data_cleaned$player_height>170 & 
+           NBA_data_cleaned$player_weight<140)
+```
+
+#### pts, ast, reb
+
+Below are the summary statistics and distributions for the numerical variables that are common box statistics: avg points per game, assists per game, and rebounds per game.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+summary(NBA_data_cleaned$pts)
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+hist(NBA_data_cleaned$pts, 
+     xlim=c(0,45), ylim=c(0,1500),
+     main="Distribution of observations by average points per game (pts)", 
+     xlab="Average points per game (pts)")
+```
+
+The average number of points per game was approximately 11 and the range was from 0 to 36 points per game. From the histogram, we can see that the distribution is right skewed, but there does not seem to be any obvious outliers in regards to points per game.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+summary(NBA_data_cleaned$ast)
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+hist(NBA_data_cleaned$ast, 
+     xlim=c(0,14), ylim=c(0,2500),
+     main="Distribution of observations by average assists per game (ast)",
+     xlab="Average assists per game (ast)")
+```
+
+The average number of assists per game was approximately 2 and the range was from 0 to 12 assists. From the histogram, we can see that the distribution is right skewed, but there does not seem to be any obvious outliers in regards to assists per game.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+summary(NBA_data_cleaned$reb)
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+hist(NBA_data_cleaned$reb, xlim=c(0,20), 
+     ylim=c(0,2000),
+     main="Distribution of observations by average rebounds per game (reb)", 
+     xlab="Average rebounds per game (reb)")
+```
+
+The average number of rebounds per game was approximately 4 and the range was from 0 to 16 rebounds. From the histogram, we can see that the distribution is right skewed, but there does not seem to be any obvious outliers in regards to rebounds per game.
+
+### Visualize relationships between variables
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+pairs(NBA_data_cleaned[,-c(1,2,11)])
+#pairs(brexit.data[, -1,2,11])
+
+```
+
+I used the pairs command to make multiple plots of my variables of interest against each other. It looks like there is a strong positive linear association between player height and player weight. None of the other variable comparisons stand out as having strong linear associations.
+
+Between the outcome variable of interest, net_rating, and the other variables, it looks like the correlation between age and net_rating, player height and net_rating, player weight and net_rating, and games played and net_rating is very weak. It looks as if there is a moderate positive linear relationship between net_rating and the variables average points per game, average rebounds per game, and average assists per game.
+
+# 2. Preliminary Linear Regression Model and Variable Selection
+
+### Build preliminary model
+
+I am interested in predicting the net rating of a player. I will begin my analysis by fitting a multiple linear regression model that uses box scores (average points, rebounds, and assists per game) and simple demographic information (height, weight, age) as possible predictors.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+nba.model1<-lm(net_rating~ pts+reb+ast+player_height+player_weight+age,
+               data=NBA_data_cleaned)
+
+summary(nba.model1)
+```
+
+The R squared and adjusted R squared values are quite low for this model. This suggests that it would be beneficial to perhaps perform feature selection to identify the more important covariates to keep in the model and/or to transform some of the predictors or the outcome variable.
+
+### Variable selection:
+
+To select a better performing model, we will test out which combination of covariates to include using both forwards selection and backwards selection procedures with BIC as the information criterion. However, in this analysis, I would like to include hypothesis testing to see which covariates are significant. But when we use a variable selection procedure like forwards or backwards selection, the variables selected and included in our final model are those that had high values for the test statistic, so the test statistics for the selected model will not follow the expected distribution. To allow for hypothesis testing and valid inference procedures, I will first split the NBA dataset into a training set and test set where we perform variable selection using the training set and calculate test statistics using the test set data.
+
+##### Randomly split NBA dataset into 70% training and 30% testing:
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+# Sample splitting 70% training and 30% test
+# sample size
+n <- dim(NBA_data_cleaned)[1]
+m <- floor(n * 0.7)
+# generate random training indics (70%)
+train_idx <- sample(1:n, m, replace = FALSE)
+# extract the training data using training indices
+train_set <- NBA_data_cleaned[train_idx,]
+# extract the test data
+test_set <- NBA_data_cleaned[-train_idx,]
+
+```
+
+##### 
+
+##### Forwards selection with BIC
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#largest model to consider is the model fit above (nba.model1)
+nba.model1<-lm(net_rating~ pts+reb+ast+player_height+player_weight+age,
+               data=train_set)
+
+#smallest model to consider is the model with only an intercept
+nba.model2<-lm(net_rating~1, data=train_set)
+
+
+out_forward_bic <- step(object = nba.model2, direction = "forward",
+scope = formula(nba.model1), trace = T, k = log(nrow(train_set)))
+summary(out_forward_bic)
+```
+
+##### Backwards selection with BIC
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+out_backward_bic <- step(object = nba.model1, direction = "backward",
+scope = formula(nba.model1), trace = T, k = log(nrow(train_set)))
+summary(out_backward_bic)
+```
+
+R uses negative BIC criterion, so the best model is the one with the smallest BIC value. Both the forwards and backwards procedure selection converged on the same best final model. This best final model predicts net_rating using the covariates average points per game, average assists per game, average rebounds per game, and age of the player. The best final model had a BIC=17952.15.
+
+# 3. Check Linear Regression Assumptions
+
+We will first save the best model predicted by the fowards and selection procedures as nba.model3
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#final backwards and forwards selection model
+nba.model3<-lm(net_rating~ pts+reb+ast+age,
+               data=train_set)
+
+summary(nba.model3)
+
+```
+
+Now we will check if this model (nba.model3) satisfies each of the assumptions for linear regression.
+
+##### **1) Independence of observations: errors across observations should be uncorrelated**
+
+This means that the error terms for one observation should not be related to the error term for another observation. To assess this, I have plotted the fitted values from the model against the residuals.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+plot(nba.model3$fitted.values, nba.model3$residuals, 
+     main ="Residuals vs Fitted values",
+ xlab = "Fitted values",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+Generally, the residuals seem to be equally spread apart for fitted values between -4 and 4. For higher fitted values (values \>4), the residuals tend to be closer to 0 than for fitted values \<4, but it is not obvious to me from this plot whether the errors across observations are correlated or not. To help verify if the indpenedence assumption holds, we can use the Durbin-Watson test to detect autocorrelation in the residuals (below). The p-value from the Durbin-Watson test is approximately 0.97, which is greater than 0.05 (using a 95% significance level), and so we fail to reject the null hypothesis and there is not significant evidence suggesting there is autocorrelation to the residuals. Therefore, the independence assumption seems to hold.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+dwtest(nba.model3)
+```
+
+##### **2) Linearity: Conditional expectation of Y given X is a linear function of X**
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#net_rating(y) vs pts (x1) 
+plot(train_set$pts, train_set$net_rating, 
+     main ="Net rating (y) vs average points per game (x1)",
+ xlab = "Average points per game",
+ ylab = "Net rating (Team's point differential per 
+ 100 possessions while the player is on the court)")
+
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#net_rating(y) vs reb (x2) 
+plot(train_set$reb, train_set$net_rating, 
+     main ="Net rating (y) vs average rebounds per game (x2)",
+ xlab = "Average rebounds per game",
+ ylab = "Net rating (Team's point differential 
+ per 100 possessions while the player is on the court)")
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#net_rating(y) vs ast (x3) 
+plot(train_set$ast, train_set$net_rating, 
+     main ="Net rating (y) vs average assists per game (x3)",
+ xlab = "Average assists per game",
+ ylab = "Net rating (Team's point differential per 
+ 100 possessions while the player is on the court)")
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#net_rating(y) vs age (x4) 
+plot(train_set$age, train_set$net_rating, 
+     main ="Net rating (y) vs age (x4)",
+ xlab = "Player's age in years",
+ ylab = "Net rating (Team's point differential 
+ per 100 possessions while the player is on the court)")
+```
+
+Looking at the residuals vs fitted values plot above, it looks like the residuals are fairly randomly scattered above and below y equals zero and there is no obvious pattern to the residual plot. I also made scatterplots of the outcome variable (net_rating) versus each covariate. If there is a linear relationship, the scatterplot should appear as if the points are clustered along a straight line. The scatterplots for the outcome vs average points per game (x1), average rebounds per game (x2), and average assists per game (x3) looks like the observations are scattered along a straight line with a slightly positive slope. However, the scatterplot for net rating vs age (x4) does not look like the points are clustered along a straight line, and the relationship between net rating and age is likely not linear.
+
+##### 3. Homoskedasticity $var(E_i | X_i )=\sigma^2$
+
+We can check if the constant variance assumption holds by plotting the residuals of the model versus pts (x1), reb (x2), ast (x3), and age(x4).
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+
+#Residuals vs pts (x1) 
+plot(train_set$pts, nba.model3$residuals, 
+     main ="Residuals vs average points per game (x1)",
+ xlab = "Average points per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#Residuals vs reb (x2) 
+plot(train_set$reb, nba.model3$residuals, 
+     main ="Residuals vs average rebounds per game (x2)",
+ xlab = "Average rebounds per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#Residuals vs ast (x3) 
+plot(train_set$ast, nba.model3$residuals, 
+     main ="Residuals vs average assists per game (x3)",
+ xlab = "Average assists per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#Residuals vs age (x4) 
+plot(train_set$age, nba.model3$residuals, 
+     main ="Residuals vs age (x4)",
+ xlab = "Player age",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+From looking at the aboveplots, it does not seem like the variance (distribution of the errors) is independent of x value for each covariate. For the covariates rebounds and assists, it especially looks like the distribution of the residuals is narrower for higher versus lower values of the covariate. To confirm, I ran a breush pagan test (below). The p value of the bruesh pagan test is approximately 0.015, which is less than 0.05 (95% significance level). Therefore, we reject the null hypothesis, and conclude that there is not a constant error variance and the data is heteroskedastic.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#run breusch pagan test
+bptest(nba.model3)
+```
+
+##### 4) Normality: error terms follow a normal distribution with mean 0 and variance sigma squared
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+qqPlot(nba.model3$residuals)
+```
+
+The above residuals plots show that the residuals generally seem to fall equally above and below y=0, suggesting that the assumption that the error term has mean zero holds. To see if the error terms follow a normal distribution, we can plot the residuals on a qqPlot. The points seem to follow the qqplot line with most of the points falling within the confidence bands, suggesting that the normality assumption holds.
+
+##### 5) Multicollinearity: predictors should not be nearly perfectly correlated
+
+We can conduct a variance inflation factor test to determine if there is multicollinearity among the predictor variables.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#calculate VIF
+vif(nba.model3)
+```
+
+If VIF=1, there is no multicollinearity, and generally, we are concerned about multicollinearity only if VIF\>5. Since all of the predictors had a VIF\<5, and most were close to 1, the multicollinearity assumption is not violated in our model.
+
+# 4. Assumption Violation Handling
+
+When checking the linear regression assumptions in section 3, I found that the linearity assumption may have been violated, particularly respective to the covariate age, and the constant error variance assumption did not hold. The model met the independence, normality, and multicollinearity assumptions.
+
+##### Transformations of model:
+
+To adjust for the linearity and homoskedasticity assumptions being violated, I will try different transformations of the response variable and covariates (particularly the age covariate) and see if they improve the model. Please note since the net_rating variable has observations with negative values, I did the transformation such that I was taking the logarithm of the (net_rating + constant) and the constant 20 was picked so that all of the net_ratings were shifted to have positive values
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#orginal model
+nba.model3<-lm(net_rating~ pts+reb+ast+age,
+               data=train_set)
+
+#transform just response variable
+nba.model3b<-lm(log(net_rating+20)~ pts+reb+ast+age,
+               data=train_set)
+
+#transform just age covariate
+nba.model3c<-lm(net_rating~ pts+reb+ast+log(age),
+               data=train_set)
+
+#transform all of the covariates
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=train_set)
+
+#transform both response and covariates
+nba.model3e<-lm(log(net_rating+20)~ log(pts)+log(reb)+log(ast)+log(age),
+               data=train_set)
+
+#try making age^2 
+nba.model3f<-lm(net_rating~ pts+reb+ast+poly(age,2),
+               data=train_set)
+
+
+
+```
+
+##### Compare models using diagnostic plots:
+
+To compare the original model (nba.model3) to the five potential transformations I tried, I made a plot of the standardized residuals vs fitted values, plot of the observed vs fitted values, and a qqPlot for all 6 total models. In the residual plots, I looked to see if the residuals looked to be randomly scattered above and below zero across the range of fitted values with no clear patterns. For the observed vs fitted values, I looked to see which model best seemed to follow the y=x line or where the fitted value was close to the observed value. For the qqplot, I looked to see that the model followed the qqplot line closely and showed no curved patterns, suggesting that the error distribution is normal. Model (nba.model3d) seemed to have the best residual, observed vs fitted, and qqPlot, so I will use this model in which I have log transformed all of the covariates going forward.
+
+**Residual plots:**
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+ par(mfrow = c(1,2))
+ plot(fitted.values(nba.model3),rstandard(nba.model3))
+ abline(h=0)
+ plot(fitted.values(nba.model3b),rstandard(nba.model3b))
+ abline(h=0)
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+ par(mfrow = c(1,2))
+ plot(fitted.values(nba.model3c),rstandard(nba.model3c))
+ abline(h=0)
+ plot(fitted.values(nba.model3d),rstandard(nba.model3d))
+ abline(h=0)
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+ par(mfrow = c(1,2))
+ plot(fitted.values(nba.model3e),rstandard(nba.model3e))
+ abline(h=0)
+plot(fitted.values(nba.model3f),rstandard(nba.model3f))
+ abline(h=0)
+```
+
+**Plot of fitted vs observed values:**
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+plot(nba.model3$fitted.values, train_set$net_rating, 
+     main ="Observed vs Fitted values for nba.model3 ",
+ xlab = "Fitted values",
+ ylab = "Observed values for net_rating")
+ abline(a=0, b=1,col="red")
+ 
+
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+plot(nba.model3b$fitted.values, train_set$net_rating, 
+     main ="Observed vs Fitted values for nba.model3b",
+ xlab = "Fitted values",
+ ylab = "Observed values for net_rating")
+ abline(a=0, b=1,col="red")
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+plot(nba.model3c$fitted.values, train_set$net_rating, 
+     main ="Observed vs Fitted values for nba.model3c",
+ xlab = "Fitted values",
+ ylab = "Observed values for net_rating")
+ abline(a=0, b=1,col="red")
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+plot(nba.model3d$fitted.values, train_set$net_rating, 
+     main ="Observed vs Fitted values for nba.model3d",
+ xlab = "Fitted values",
+ ylab = "Observed values for net_rating")
+ abline(a=0, b=1,col="red")
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+plot(nba.model3e$fitted.values, train_set$net_rating, 
+     main ="Observed vs Fitted values for nba.model3e",
+ xlab = "Fitted values",
+ ylab = "Observed values for net_rating")
+ abline(a=0, b=1,col="red")
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+plot(nba.model3f$fitted.values, train_set$net_rating, 
+     main ="Observed vs Fitted values for nba.model3f",
+ xlab = "Fitted values",
+ ylab = "Observed values for net_rating")
+ abline(a=0, b=1,col="red")
+```
+
+**qqPlots to check for normality**
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+par(mfrow = c(1,2))
+#qqplot  
+qqnorm(rstandard(nba.model3))
+ abline(0,1,lty=2)
+ 
+qqnorm(rstandard(nba.model3b))
+ abline(0,1,lty=2) 
+
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+par(mfrow = c(1,2))
+#qqplot  
+qqnorm(rstandard(nba.model3c))
+ abline(0,1,lty=2)
+ 
+qqnorm(rstandard(nba.model3d))
+ abline(0,1,lty=2)
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+par(mfrow = c(1,2))
+#qqplot  
+qqnorm(rstandard(nba.model3e))
+ abline(0,1,lty=2)
+ 
+qqnorm(rstandard(nba.model3f))
+ abline(0,1,lty=2)
+```
+
+In particular, I tried to correct for the linearity and homoskedasticity assumptions being violated using transformations of the model. Below, I have specifically compared the original model and the transformed model in respect to these assumptions.
+
+##### Correct for linearity:
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+plot(nba.model3$fitted.values, nba.model3$residuals, 
+     main ="Residuals vs Fitted values for original model",
+ xlab = "Fitted values",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+
+ 
+
+
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+plot(nba.model3d$fitted.values, nba.model3d$residuals, 
+     main ="Residuals vs Fitted values for transformed model",
+ xlab = "Fitted values",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+When I compare the residual vs fitted value plots, it looks like both the original and transformed models have residual values randomly scattered above and below y=0 and there are no obvious patterns to the residuals, such as a curved or wavy pattern. It also looks like the spread of the residuals is more even across different fitted values for the transformed model than the original model. Although it is not very obvious whether the transformed model better satisfies the linearity assumption than the original model, the residual plot suggests that the transformed model does satisfy the linearity assumption.
+
+##### Correct for heteroskedasticity:
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+par(mfrow = c(1,2))
+
+#Residuals vs pts (x1) 
+plot(train_set$pts, nba.model3$residuals, 
+     main ="Residuals vs average points per game (x1) on original model",
+    cex.main=1,
+ xlab = "Average points per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+ 
+ #Residuals vs pts (x1) 
+plot(train_set$pts, nba.model3d$residuals, 
+     main ="Residuals vs average points per game (x1) on transformed model",
+ cex.main=1,
+ xlab = "Average points per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+par(mfrow = c(1,2))
+#Residuals vs reb (x2) 
+plot(train_set$reb, nba.model3$residuals, 
+     main ="Residuals vs average rebounds per game (x2) on original model",
+ cex.main=1,
+ xlab = "Average rebounds per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+ 
+ #Residuals vs reb (x2) 
+plot(train_set$reb, nba.model3d$residuals, 
+     main ="Residuals vs average rebounds per game (x2) on transformed model",
+ cex.main=1,
+ xlab = "Average rebounds per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+par(mfrow = c(1,2))
+
+#Residuals vs ast (x3) 
+plot(train_set$ast, nba.model3$residuals, 
+     main ="Residuals vs average assists per game (x3) on original model",
+ cex.main=1,
+ xlab = "Average assists per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+ 
+ #Residuals vs ast (x3) 
+plot(train_set$ast, nba.model3d$residuals, 
+     main ="Residuals vs average assists per game (x3) on transformed model",
+ cex.main=1,
+ xlab = "Average assists per game",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+par(mfrow = c(1,2))
+
+#Residuals vs age (x4) 
+plot(train_set$age, nba.model3$residuals, 
+     main ="Residuals vs age (x4) on original model",
+ cex.main=1,
+ xlab = "Player age",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+ 
+ #Residuals vs age (x4) 
+plot(train_set$age, nba.model3$residuals, 
+     main ="Residuals vs age (x4) on transformed model",
+ cex.main=1,
+ xlab = "Player age",
+ ylab = "Residuals")
+ abline(h=0,col="red")
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#run breusch pagan test
+bptest(nba.model3)
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#run breusch pagan test
+bptest(nba.model3d)
+```
+
+Looking at the plots of each covariate vs the residuals, it is not clear for any of the covariates whether the transformed model has a more constant error variance than the original model. Especially in regards to the assists covariate, it especially looks like the distribution of the residuals is narrower for higher vs lower values of the covariate. I ran a Breush Pagan test on both the original and transformed model. The p value for the transformed model was approximately 0.036 vs 0.015 in the original model. The p value is still less than 0.05, and so we would still reject the null hypothesis and conclude that the transformed model is heteroskedastic. However, since the transformed model has a higher p value than the original model, this suggests that the transformation helped correct a little of the heteroskedasticity.
+
+When the model violates the homoskedasticity assumption, its estimates are still unbiased, however the standard errors are larger than estimated. To better correct for this, in the following sections where we compute confidence intervals and perform hypothesis tests, I will use robust vs model based standard errors.
+
+In scripts 1 and 2, we performed exploratory analysis of the NBA data, split the NBA data into a training and testing dataset, and then performed backwards and forwards selection using the training data to determine which predictors specifically we should include in the model. Both the backwards and forwards selection methods converged on the same best model, where the predictors were average points per game, average rebounds per game, average assists per game, and age of the player. We then checked whether this best model satisfied the linear regression assumptions and ended up transforming the covariates with a log transform to better satisfy the linearity and heteroskedasticity assumptions.
+
+# 5. Assess Model Performance
+
+To determine how well our model (the transformed model nba.model3d) works, we will use this model to predict the outcome (net_rating) on our test data and calculate the mean squared error (MSE)
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#transformed model summary
+summary(nba.model3d)
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#Predict the net_rating on test data (new data) using 
+#the nba.model3d that was fit on the training set
+y_hat <- predict(nba.model3d, test_set)
+
+# Calculate the error: mean squared error (MSE)
+y_true <- test_set$net_rating
+
+pred_error <- mean((y_hat - y_true)^2)
+pred_error
+```
+
+The mean squared error (MSE) of our transformed model on our test_dataset for predicting net_rating is approximately 31. In general, a lower MSE is better because it indicates that the model's predictions are close to the actual observed values. The MSE of our model is somewhat high, and this aligns with the R-squared and Adjusted R-squared values of 0.11 for our model. R-squared is a metric that tells us the proportion of variance in the dependent variable that is explained by the covariates in our regression model on our training data. Adjusted-R squared is a similar metric that penalizes for model complexity (having many predictors). The R-squared value of our model suggests that only 11% of the variance in net_rating was accounted for by our model (ideally, we would like our R-squared value to be as high as possible, preferably over 0.7). This indicates that there are perhaps other important predictor variables that impact net_rating that are not accounted for by our model. Further follow up studies may benefit from looking at other predictors to measure that could help explain net_rating, such as the net_rating of a player's teammates or the team's win record that season.
+
+Below, I also tested the model's accuracy using k-fold cross validation with k=5 folds. I did this because a simple test train split can be biased if the training and test set were not allocated randomly. K-fold cross validation helps alleviate such randomness by splitting the data into k subsets, training the model on k-1 subsets, and then calculating the MSE on the hold-out subset. SInce the final metric, total MSE, is obtained by averaging the MSE across folds, it can be a more unbiased measure of model performance than the simple train test split. Below, we found that the total MSE on our hold-out subsets was approximately 30, which is very close to the MSE for our model obtained on the test set of 31.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+
+#fit model using glm to use k-fold cross validation
+nba.model3d.glm <- glm(net_rating ~ log(pts) + log(reb) + log(ast) + log(age), 
+                       data = NBA_data_cleaned)
+summary(nba.model3d.glm)
+
+
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+#cross validation error
+err_cv <- cv.glm(NBA_data_cleaned, nba.model3d.glm, K=5)$delta[1]
+err_cv
+```
+
+# 6. Hypothesis Testing and Feature Impact Analysis:
+
+Although our model's predictive accuracy was not very high on the test data, it could still be helpful to see if any of the included covariates in the model are significant in regards to net_rating. I will use a F-test to see whether any of the covariates in our model are significant using the test_data. The null and alternative hypotheses are as follows:
+
+$H_0$: $\beta_{pts}$= $\beta_{reb}$= $\beta_{ast}$= $\beta_{age}$= 0
+
+$H_A$: At least one of the coefficients is not equal to zero
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model4<- lm(net_rating~1,
+               data=test_set)
+
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model4)
+```
+
+The f statistic of the comparison is equal to F= 51.The p value of the model is \< 2.2 ∗ 10−16 aka a very small value. Since the p value is less than alpha=0.05, at the 95% significance level, we have enough evidence to reject the null hypothesis and conclude that at least one of the coefficients in the model is not equal to zero and collectively, these predictors improve the model significantly compared to an intercept only model. To determine which predictors specifically are significant, we can do anova tests comparing the full model to a model with just the covariate of interest excluded.
+
+### Quantify the impact of each feature:
+
+##### Use Anova tests to see which features are significant:
+
+###### Points per game
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model5<- lm(net_rating~ log(reb)+log(ast)+log(age),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model5)
+```
+
+The p value of 0.07 is greater than alpha=0.05, so at the 95% significance level, we do not have enough evidence to reject the null hypothesis and and cannot conclude that log(pts) is significantly associated with net rating given that log(reb), log(ast), and log(age) are already included in our model.
+
+###### Rebounds per game
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model6<- lm(net_rating~ log(pts)+log(ast)+log(age),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model6)
+```
+
+The p value of 1\*10\^-5 is less than alpha=0.05, so at the 95% significance level, so we have enough evidence to reject the null hypothesis and conclude that log(reb) is associated with net rating given that log(pts), log(ast), and log(age) are already included in our model.
+
+###### Assists per game
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model7<- lm(net_rating~ log(pts)+log(reb)+log(age),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model7)
+```
+
+The p value of 0.002 is less than alpha=0.05, at the 95% significance level, so we have enough evidence to reject the null hypothesis and conclude that log(ast) is associated with net rating given that log(pts), log(reb), and log(age) are already included in our model.
+
+###### Age
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model8<- lm(net_rating~ log(pts)+log(reb)+log(ast),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model8)
+```
+
+The p value of 2.2\*10\^-16 is less than alpha=0.05, at the 95% significance level, so we have enough evidence to reject the null hypothesis and conclude that log(age) is associated with net rating given that log(pts), log(reb), and log(ast) are already included in our model.
+
+##### Quantify the impact of each feature:
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+summary(nba.model3d)
+```
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+nba.model3d$coefficients[2]*log(1.01) #pts
+
+nba.model3d$coefficients[3]*log(1.01) #reb
+
+nba.model3d$coefficients[4]*log(1.01) #ast
+
+nba.model3d$coefficients[5]*log(1.01) #age
+```
+
+Above, we found that the covariates log(reb), log(ast), log(age) were significant to the model, while log(pts) was not:
+
+Points: For two players with average points per game which differ by 1% and have the same average rebounds and assists per game and are the same age, the expected net rating for the player whose average points per game is 1% more is equal to 0.61log(1.01)= approximately 0.006 higher net rating.
+
+Rebounds: For two players with average rebounds per game which differ by 1% and have the same average points and assists per game and are the same age, the expected net rating for the player whose average rebounds per game is 1% more is equal to 1.19log(1.01)= approximately 0.011 higher net rating.
+
+Assists: For two players with average assists per game which differ by 1% and have the same average points and rebounds per game and are the same age, the expected net rating for the player whose average rebounds per game is 1% more is equal to 0.61log(1.01)= approximately 0.006 higher net rating.
+
+Age: For two players whose age in years differs by 1% but have the same average points, rebounds, and assists per game, the expected net rating for the player who is older is equal to 7.71log(1.01)= approximately 0.078 higher net rating than the younger player.
+
+##### Confidence intervals for signficant coefficients
+
+Because when we were checking linear regression assumptions we found that the transformed model was still heteroskedastic, I will use robust standard errors over model based standard errors to form 95% confidence intervals for each coefficient.
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+### Calculate the lower and upper part of the CI using robust standard errors
+ # Create 95% confidence intervals using robust standard errors
+ coefci(nba.model3d, level = .95, 
+        vcov. = vcovHC(nba.model3d, type = "HC3"))
+```
+
+The 95% confidence interval using robust standard errors for log(pts) is (-34.3,-23.4), for log(reb) is (0.661, 1.726), for log(ast) is (0.215, 1.018), and for log(age) is (6.143, 9.271).
+
+##### Practical significance of findings:
+
+For NBA coaches, general managers, and owners, it is beneficial to draft and play players who when on the court improve the team's performance. The metric net_rating is a proxy measure for this because it measures the team's point differential per 100 possessions while the player is on the court. So, players with a higher net_rating are those who when on the court lead their team to outscore their opponent, thus increasing the team's chance of winning.
+
+However, NBA teams are practically constrained by a salary cap, only having two draft picks per year (in modern times), and only having 12 roster spots. So, for a given roster spot, the team needs to pick the best available player that can maximize the team's chance of winning or improve their point differential.
+
+This study considered both demographic and common player statistics to see if they were helpful for predicting a player's net_rating. In section 5, we found that the model's predictive accuracy in test data was not very high when considering MSE and k-fold total MSE. In addition, the R-squared value and adjusted R-squared value were quite low. This indicates that there are probably other important important predictor variables that impact net_rating that are not accounted for by our model. In the future, it would be beneficial to measure other predictors that could impact net_rating, such as the net_rating of a player's teammates or the team's win record that season. However, although the model's predictive accuracy was low, we did find that the covariates rebounds per game, assists per game, and player age were significantly associated with net rating, while points per game was not. This information is still potentially useful for NBA coaches and GMS. Knowing this could help guide GMs on who to draft or coaches on which player to play because if, for example, they are trying to decide between two players who for example are otherwise similar in points, rebounds, and assists per game but one player is older than the other, it may actually be beneficial to play the older player because their net_rating is higher.
+
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Introduction: dataset description and problem statement
+
+I performed a linear regression analysis looking at whether it is possible to predict an NBA team's point differential while a particular player is on the court using other information known about the player, such as demographic information and basic box score statistics. Being able to predict a player's point differential could be beneficial for GMs and coaches because players with a higher point differential are those who, when on the court, lead their team to outscore their opponent, thus increasing the team's chance of winning. Knowing a player's point differential could help guide GMs on who to draft when comparing players or indicate to coaches which player to start.
+
+The dataset used is the NBA Players dataset curated by Justinas Cirtuatas and publicly available on Kaggle (<https://www.kaggle.com/datasets/justinas/nba-players-data?resource=download&select=all_seasons.csv>). It includes player information from the 1996-2022 NBA seasons. Specifically, each observation (i.e. row in the data) corresponds to a particular player in a specific NBA season. For this analysis, I have downloaded the dataset from Kaggle and the .csv file is available in this repository in the folder "nba_data".
+
+# Methodology: techniques used and justification
+
+##### Exploratory Data Analysis:
+
+Please see .Rmd file "1_ExploratoryDataAnalysis.Rmd" for code corresponding to this step and my conclusions from the analysis.
+
+Briefly, since the purpose of this analysis was to predict an NBA team's point differential while a particular player is on the court (called net_rating in this dataset), I began by selecting a subset of demographic and box score variables that seemed like they could potentially impact a player's net_rating. Particularly, there were some variables like ast (average number of assists distributed) and ast_pct (percentage of teammate field goals the player assisted while he was on the floor) that seemed like they could have overlapping information, so only one variable was selected to represent that information (in this case, ast). I also filtered the dataset to only include observations from NBA players that played in 50 or more games in the given season since players that played in only few games in a season tended to have box statistics, like average points per game or a net_rating, that were very high or very low. This cleaned dataset was verified that it had no missing values and each variable was assigned to the correct variable type in R such that continuous variables were assigned to be numeric, variables that only took on whole numbers were assigned to be integers, and categorical variables were assigned to be factors.
+
+The distribution of categorical variables was looked at using the table() function in R. Numeric and integer variables were looked at by examining summary statistics (like mean, median, range) and by plotting a histogram of the variable. The histograms were particularly used to identify if there were any observations for a given variable that seemed to be outliers. The only variables that seemed to have clear outliers were player height and weight, and the players who were determined to be outliers for those variables were removed from the dataset.
+
+Finally, the pairs() function was used to examine the relationships between the variables in the dataset using scatterplots (the pairs function only works to compare continuous or integer variables, however, since none of the categorical variables were considered potential predictor variables for the linear regression analysis, this seemed to be acceptable.) From the comparative scatterplots, there did not seem to be any strong linear associations except between player height and weight. In regards to the outcome variable net_rating, it looked as if there was a moderate positive linear relationship between the outcome and average points per game, average rebounds per game, and average assists per game.
+
+##### Preliminary linear regression model building:
+
+Please see .Rmd file "2_LinearRegressionAssumptions.Rmd" for code corresponding to this step and my conclusions from the analysis (specifically section 2 "Preliminary Regression Model Building and Variable Selection").
+
+My interest was to predict a player's net_rating, and I thought that the follow box score variables (average points, rebounds, and assists per game) and demographic variables (height, weight, age) could potentially be important predictors.
+
+I began by splitting my cleaned NBA dataset into 70% training data, 30% testing data (random assignment was used so that the training and testing data were not systematically different). This was done so that I could use variable selection procedures to identify the most important covariates to include but still have my inference procedures be valid.
+
+Variable selection was performed using the training data. I tried both forwards selection and backwards selection with BIC as the information criterion to identify the most important predictors. The full model considered was a model with net_rating as the outcome and average points, rebounds, and assists per game, height, weight, and age as potential covariates.
+
+Both the forwards and backwards selection converged on the same best model (had the lowest negative BIC score), which included just the covariates points, rebounds, assists, and player age. Therefore, for all following analyses, I used this best model with these four covariates of interest. Points, rebounds, assists are all numeric and player age is an integer.
+
+##### Check linear regression assumptions:
+
+Please see .Rmd file "2_LinearRegressionAssumptions.Rmd" for code corresponding to this step and my conclusions from the analysis (specifically section 3 "Check Linear Regression Assumptions).
+
+I checked to see if the best model from the variable selection process met all the assumptions of linear regression. To see if the model met the independence assumption, I checked both a plot of residuals versus fitted values and conducted a Durbin-Watson test. The linearity assumption was checked by making scatterplots of the outcome variable net_rating against each of the covariates in the model as well as by looking at the residuals versus fitted values plot. The homoskedasticity assumption was checked by plotting the residuals versus each covariate in the model. The normality assumption was checked using qqPlots (using the qqPlot() function from the package "car") and the multicollinearity assumption was tested by calculating the variance inflation factor (using the vif() function from the package "car").
+
+Please see section 3 in the file ""2_LinearRegressionAssumptions.Rmd" to view each plot and my description based on the plot of why I though a given assumption was met or not.
+
+Overall, I found that the independence, normality, and multicollinearity assumptions seemed to be met, but the linearity and homoskedasticity assumptions were not.
+
+##### Model transformations and correcting assumption violations:
+
+Please see .Rmd file "2_LinearRegressionAssumptions.Rmd" for code corresponding to this step (specifically section 4 "Assumption Violation Handling"). The code has each plot mentioned below and a description based on the plot of why I thought a given assumption was now met or not.
+
+To adjust for the linearity and homoskedasticity assumptions being violated, I tried different transformations of the response variable and covariates (particularly the age covariate) and see if they improved the model. Specifically, I tried 1) log transforming just the response variable, 2) log transforming just the covariate age, 3) log transforming all of the covariates, 4) log transforming the response and all of the covariates, 5) using the poly() function to include an $age^2$ term.
+
+I then compared these five transformed models to the original model using side-by-side fitted value versus residual plots, observed vs fitted value scatterplots, and qqPlots. The model that best seemed to satisfy the linear regression assumptions overall based on these three diagnostic plots was selected as the best model going forward. I found that the third transformation, log transforming all of the covariates only, seemed to best satisfy the linear regression assumptions out of all the six models tested. This transformed model seemed to now satisfy the linearity assumption based on the residual versus fitted value plots. However, although the transformation improved the model such that the error variance was more constant that the original model, the transformed model still did not have a constant error variance across observations based on plots of residuals vs each predictor variable and the Breusch-Pagan test. Therefore, robust standard errors instead of model based standard errors were used when creating confidence intervals in the following section.
+
+##### Assess model performance on test data and using k-fold cross validation:
+
+Please see .Rmd file "3_HypothesisTestingandFeatureImpactAnalysis.Rmd" for code corresponding to this step (specifically section 5 "Assess Model Performance").
+
+To determine how well our model (the best transformed model) works, I used the model to predict the net_rating of the test set and then calculated the mean squared error (MSE). The MSE measures the average squared difference between the model predictions and true observed net ratings. I also looked at the R-squared value and Adjusted-R squared value, which describe the proportion of variance in the dependent variable (net_rating) that is explained by the covariates in our regression model on our training data.
+
+Finally, I also tested the accuracy using k-fold cross validation with k=5 folds. I did this because a simple test train split can be biased if the training and test set were not allocated randomly. K-fold cross validation helps alleviate such randomness by splitting the data into k subsets, training the model on k-1 subsets, and then calculating the MSE on the hold-out subset. SInce the final metric, total MSE, is obtained by averaging the MSE across folds, it can be a more unbiased measure of model performance than the simple train test split.
+
+##### Hypothesis testing and feature impact analysis:
+
+Please see .Rmd file "3_HypothesisTestingandFeatureImpactAnalysis.Rmd" for code corresponding to this step (specifically section 6 "Hypothesis Testing and Feature Impact Analysis").
+
+Hypothesis testing was conducted using F test to see whether any of the covariates in the best transformed model were significant using the test_data.
+
+The best transformed model was compared to a model with just an intercept term using the ANOVA () function and the p value of the calculated F-statistic was assessed at a 5% significance level to see if collectively the predictors improve the model significantly compared to an intercept only model. Since the obtained p value was \< 0.05, I rejected the null hypothesis and concluded that at least one of the coefficients in the model is not equal to zero.
+
+To see specifically which of the four covariates are significantly associated with net_rating, I did subsequent F- tests comparing the full model to a model with just the covariates of interest excluded. This was done for all four covariates, log(pts), log(reb), log(ast), and log(age). This test was performed and interpreted as described above for the comparison with the intercept only model (5% significance level used).
+
+Finally, I looked at the estimated coefficients for the best transformed model and provided a written interpretation of what each coefficient means in the context of the model to quantify the impact of each covariate. Confidence intervals using robust standard errors were also computed and listed for each covariate.
+
+I concluded the feature analysis with a brief summary of how the results may be useful to NBA coaches and GMs, which will be expanded upon in this report summary below in the Discussion and Conclusions sections.
+
+# Results
+
+Please see the corresponding .Rmd files noted in the Methodology section to view all of the graphs and outputs for each analyses mentioned, particularly for the exploratory data analysis, variable selection, and assumptions check.
+
+To summarize the results of this regression analysis, I have included some of the most important metrics from the model performance assessment on test data and hypothesis testing here.
+
+##### Model performance:
+
+***R-squared:*** 0.11 (training data)
+
+***Adjusted R-squared:*** 0.11 (training data)
+
+***MSE on test data:*** 31
+
+***k-fold cross validation total MSE:*** 30
+
+##### Hypothesis tests for each covariate:
+
+***Covariates signficantly associated with net_rating at 95% signficance level:*** log(reb), log(ast), log(age)
+
+***Covariates not significantly associated with net_rating at 95% significance level:*** log(pts)
+
+Please see code blocks below for F-test outputs and my interpretations of the results:
+
+###### Points per game
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model5<- lm(net_rating~ log(reb)+log(ast)+log(age),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model5)
+```
+
+The p value of 0.07 is greater than alpha=0.05, so at the 95% significance level, we do not have enough evidence to reject the null hypothesis and and cannot conclude that log(pts) is significantly associated with net rating given that log(reb), log(ast), and log(age) are already included in our model.
+
+###### Rebounds per game
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model6<- lm(net_rating~ log(pts)+log(ast)+log(age),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model6)
+```
+
+The p value of 1\*10\^-5 is less than alpha=0.05, so at the 95% significance level, so we have enough evidence to reject the null hypothesis and conclude that log(reb) is associated with net rating given that log(pts), log(ast), and log(age) are already included in our model.
+
+###### Assists per game
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model7<- lm(net_rating~ log(pts)+log(reb)+log(age),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model7)
+```
+
+The p value of 0.002 is less than alpha=0.05, at the 95% significance level, so we have enough evidence to reject the null hypothesis and conclude that log(ast) is associated with net rating given that log(pts), log(reb), and log(age) are already included in our model.
+
+###### Age
+
+```{r, fig.width=6, fig.height=4, out.width='\\linewidth', fig.align='center'}
+
+nba.model3d<-lm(net_rating~ log(pts)+log(reb)+log(ast)+log(age),
+               data=test_set)
+
+nba.model8<- lm(net_rating~ log(pts)+log(reb)+log(ast),
+               data=test_set)
+
+ #Ftest to compare two different linear models
+ anova(nba.model3d, nba.model8)
+```
+
+The p value of 2.2\*10\^-16 is less than alpha=0.05, at the 95% significance level, so we have enough evidence to reject the null hypothesis and conclude that log(age) is associated with net rating given that log(pts), log(reb), and log(ast) are already included in our model.
+
+##### Covariate coefficient estimates:
+
+***Interpretation of each coefficient:***
+
+Points: For two players with average points per game which differ by 1% and have the same average rebounds and assists per game and are the same age, the expected net rating for the player whose average points per game is 1% more is equal to 0.61log(1.01)= approximately 0.006 higher net rating.
+
+Rebounds: For two players with average rebounds per game which differ by 1% and have the same average points and assists per game and are the same age, the expected net rating for the player whose average rebounds per game is 1% more is equal to 1.19log(1.01)= approximately 0.011 higher net rating.
+
+Assists: For two players with average assists per game which differ by 1% and have the same average points and rebounds per game and are the same age, the expected net rating for the player whose average rebounds per game is 1% more is equal to 0.61log(1.01)= approximately 0.006 higher net rating.
+
+Age: For two players whose age in years differs by 1% but have the same average points, rebounds, and assists per game, the expected net rating for the player who is older is equal to 7.71log(1.01)= approximately 0.078 higher net rating than the younger player.
+
+***95% Confidence intervals for each coefficient using robust standard errors:***
+
+log(pts): (-34.3,-23.4)
+
+log(reb): (0.661, 1.726)
+
+log(ast): (0.215, 1.018)
+
+log(age): (6.143, 9.271)
+
+# Discussion:
+
+Even with the best transformed model, the model performance metrics were quite low. The mean squared error on the test dataset and the total mean squared error from the k-fold cross validation were both high at approximately 31 and 30 respectively. In general, a lower MSE is better because it indicates that the model's predictions are close to the actual observed values. These results were corroborated by the R-squared and adjusted R-squared values, which were both only 0.11. This means that the proportion of variance in the outcome variable net rating that was explained by the covariates in our regression model was only 11%. Because the model performance metrics were quite low, future studies should look at measuring other potentially important predictor variables that may impact net_rating. Including other relevant predictor variables may improve prediction performance if these additional covariates contain information about a player's net_rating that is not captured by the covariates that are currently in the model.
+
+One limitation of this linear regression model is that our dataset observations contain metrics corresponding to a particular player in a specific NBA season. Therefore, for players that played in the NBA for multiple seasons, we have repeated observations for those players. This can be a problem because it can lead to errors that are not independent between observations (i.e. errors for a given player are not independent of each other). Using a fixed effect or random effect model where we consider each individual player to be a fixed or random effect could help account for this dependency. In addition, the NBA team that a given player played for may also be a clustering factor, and it seems reasonable to believe that the net_rating of one player may affect the net_rating of his teammate. Therefore, it may be useful to also account for NBA team using a fixed or random effect. When there are clustering factors that lead to dependencies in the data, underestimated standard errors and loss of statistical efficiency because each observation contributes less information than if all the observations were independent, so it is like having a smaller sample size to build the model on. Therefore, accounting for these clustering factors in future analyses may also help improve the predictive accuracy of the model.
+
+Although our model's predictive accuracy was not very high on the test data, this regression analysis is still useful because the hypothesis testing indicated which covariates were significantly associated with net_rating. We found that log(reb), log(ast), log(age) were all significantly associated with net_rating, while log(pts) was not. Knowing which variables or player characteristics are associated with a higher net rating or point differential could be useful to NBA coaches or GMs because it suggests which characteristics to look for when selecting players for their teams. Players with a higher point differential are those who when on the court lead their team to outscore their opponent, thus increasing their team's chance of winning. Since teams are constrained by salary caps and only having 12 roster spots, insight into how to select the best available player would be useful.
+
+I was not surprised that rebounds and assists were significant predictors given that these are common metrics often reported for players and used by analysts to talk about player performance. However, I was surprised to see that age was also a significant covariate since sports are generally considered to be a "younger persons game". Age being a significant covariate indicates that when trying to decide between two players that are otherwise equal in their average points, assists, and rebounds per game, an older player has a higher net rating than a younger player. Perhaps older players have more experience or leadership capabilities that allow them to improve the point differential compared to younger players. I was also surprised to find that points per game was not a significant covariate, although the p value of 0.07 was only slightly higher than 0.05, so our interpretation could change based on the significance level we choose. This suggests to me that a player that is a good rebounder or good at making assists is more likely to improve the team's point differential versus their opponent than a player that just averages more points per game. Perhaps this is because when rebounding or making assists, a player is improving their entire team's chances of scoring, which is more likely to improve the team's point differential than just being able to score more points themselves.
+
+# Conclusions:
+
+Although the current model does not have a high predictive accuracy, it indicated that rebounds, assists, and player age are all significantly associated with increasing a team's point differential. These are easily measured metrics that NBA coaches and GMs can use to decide between two players to include on their roster if these players are otherwise equal with regards to all other covariates.
+
+As mentioned in the discussion, future work should possibly look at other variables to measure that may help explain the point differential. For example, including a metric accounting for a player's teammates point differential or a player's defensive abilities may improve the prediction performance. In addition, accounting for clustering effects introduced by having repeated observations on players who played in the NBA across multiple seasons or by having dependencies caused by being on the same team may improve prediction performance.
+
+# References:
+
+Class Notes:
+
+Bettache, N. (2025). *Statistical Methods II, STSCI 6020.* <https://nayelbettache.github.io/STSCI6020.html>
+
+NBA Dataset from Kaggle:
+
+Cirtautas, J. (2023). *NBA Players Biometric, biographic, and basic box score stats from 1996 to 2022 season.* <https://www.kaggle.com/datasets/justinas/nba-players-data?resource=download&select=all_seasons.csv>
+
+Information about Variance Inflation Test:
+
+Singh, V. (2024). *Variance INflation Factor( VIF): Addressing Multicollinearity in Regression Analysis.* <https://www.datacamp.com/tutorial/variance-inflation-factor>
